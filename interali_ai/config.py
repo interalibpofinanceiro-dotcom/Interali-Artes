@@ -1,7 +1,8 @@
 """Configuracoes centrais do Interali AI Gastronomia.
 
-Le variaveis de ambiente (.env) e expoe constantes usadas pelo restante
-do projeto: acesso ao banco, chave de LLM e diretorios de assets.
+Le variaveis de ambiente (.env local, ou Secrets do Streamlit Community
+Cloud em producao) e expoe constantes usadas pelo restante do projeto:
+acesso ao banco, chave de LLM e diretorios de assets.
 """
 from __future__ import annotations
 
@@ -11,6 +12,19 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+try:
+    # Streamlit Community Cloud injeta as chaves configuradas em
+    # "App settings > Secrets" (formato TOML) em `st.secrets`, nao em
+    # variaveis de ambiente. Copiamos para os.environ aqui para o resto do
+    # projeto continuar usando `os.getenv()` sem diferenciar local x nuvem.
+    # `.setdefault` garante que um `.env` local (quando existe) tem prioridade.
+    import streamlit as st
+
+    for _chave, _valor in st.secrets.items():
+        os.environ.setdefault(_chave, str(_valor))
+except Exception:
+    pass
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
