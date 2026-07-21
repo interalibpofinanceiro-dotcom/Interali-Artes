@@ -22,15 +22,19 @@ def build_onboarding_agent(setor_macro: str = "") -> Agent:
         goal=(
             "Transformar respostas brutas e informais do cliente sobre o proprio "
             f"negocio de {cfg.label} em um perfil de marca estruturado e "
-            "cientifico, sem exigir nenhuma consultoria humana. "
-            f"{cfg.onboarding_foco}"
+            "cientifico, sem exigir nenhuma consultoria humana - incluindo, "
+            "obrigatoriamente, a lista objetiva dos servicos/produtos que o "
+            "cliente mais vende ou quer divulgar (cadastro feito uma unica vez, "
+            "no momento da assinatura, reaproveitado em toda geracao futura de "
+            f"peca). {cfg.onboarding_foco}"
         ),
         backstory=(
             f"Voce e um estrategista de branding especializado no setor de "
             f"{cfg.label}. Ja treinou centenas de pequenos empreendedores do "
             "ramo e sabe extrair, de uma unica descricao informal, a persona "
-            "demografica/psicografica, o tom de voz e as diretrizes eticas mais "
-            "adequadas ao nicho especifico do cliente."
+            "demografica/psicografica, o tom de voz, as diretrizes eticas e os "
+            "servicos/produtos mais vendidos, todos adequados ao nicho "
+            "especifico do cliente."
         ),
         llm=config.get_llm(),
         allow_delegation=False,

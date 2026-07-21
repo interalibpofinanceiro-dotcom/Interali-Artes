@@ -35,6 +35,9 @@ class Empresa(Base):
     persona_deduzida: Mapped[str | None] = mapped_column(Text, nullable=True)
     tom_de_voz_deduzido: Mapped[str | None] = mapped_column(Text, nullable=True)
     diretrizes_eticas_nicho: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Servicos/produtos que o cliente mais vende - preenchido uma unica vez no
+    # Onboarding (momento da assinatura) e reaproveitado em toda geracao de peca.
+    servicos_oferecidos: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Controle de creditos mensais
     limite_artes_mensal: Mapped[int] = mapped_column(
@@ -48,4 +51,6 @@ class Empresa(Base):
     data_renovacao_creditos: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
 
     def onboarding_completo(self) -> bool:
-        return bool(self.persona_deduzida and self.tom_de_voz_deduzido)
+        return bool(
+            self.persona_deduzida and self.tom_de_voz_deduzido and self.servicos_oferecidos
+        )

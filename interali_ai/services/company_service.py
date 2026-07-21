@@ -74,8 +74,14 @@ def salvar_perfil_ia(
     persona_deduzida: str,
     tom_de_voz_deduzido: str,
     diretrizes_eticas_nicho: str,
+    servicos_oferecidos: str = "",
 ) -> Empresa:
-    """Grava o resultado do Agente 0 (Onboarding) diretamente na empresa."""
+    """Grava o resultado do Agente 0 (Onboarding) diretamente na empresa.
+
+    `servicos_oferecidos` e preenchido uma unica vez (no momento da
+    assinatura/onboarding) e reaproveitado por todos os agentes de producao
+    em toda geracao futura de peca - nao e reperguntado a cada geracao.
+    """
     with get_session() as session:
         empresa = session.get(Empresa, empresa_id)
         if empresa is None:
@@ -84,6 +90,8 @@ def salvar_perfil_ia(
         empresa.persona_deduzida = persona_deduzida
         empresa.tom_de_voz_deduzido = tom_de_voz_deduzido
         empresa.diretrizes_eticas_nicho = diretrizes_eticas_nicho
+        if servicos_oferecidos:
+            empresa.servicos_oferecidos = servicos_oferecidos
         session.flush()
         session.refresh(empresa)
         session.expunge(empresa)

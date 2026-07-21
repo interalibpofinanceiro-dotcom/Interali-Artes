@@ -22,6 +22,9 @@ estruturado contendo:
 2. Tres pilares do Tom de Voz da marca.
 3. Diretrizes eticas e de comunicacao (o que pode e o que NAO pode ser dito) \
 adequadas a este setor especifico.
+4. Lista objetiva dos servicos/produtos que o cliente MAIS VENDE ou deseja \
+divulgar (este e um cadastro feito uma unica vez, no momento da assinatura \
+- todas as pecas futuras vao se basear nesta lista, sem perguntar de novo).
 
 Foco obrigatorio da entrevista/deducao para este setor:
 \"\"\"
@@ -47,6 +50,13 @@ class PerfilDeMarca(BaseModel):
     diretrizes_eticas_nicho: str = Field(
         ..., description="Diretrizes eticas e de comunicacao (palavras proibidas/permitidas) do nicho."
     )
+    servicos_oferecidos: str = Field(
+        ...,
+        description=(
+            "Lista objetiva dos servicos/produtos que o cliente mais vende ou "
+            "quer divulgar, extraida das respostas brutas."
+        ),
+    )
 
 
 def _perfil_simulado(setor_macro: str, respostas: str) -> PerfilDeMarca:
@@ -69,6 +79,10 @@ def _perfil_simulado(setor_macro: str, respostas: str) -> PerfilDeMarca:
             f"'{cfg.label}'."
         ),
         diretrizes_eticas_nicho=diretrizes,
+        servicos_oferecidos=(
+            f"[Modo simulado] {respostas.strip()}. Configure OPENAI_API_KEY "
+            "no .env para uma extracao real via LLM."
+        ),
     )
 
 
@@ -87,8 +101,8 @@ def _perfil_via_llm(setor_macro: str, respostas: str) -> PerfilDeMarca:
             respostas=respostas,
         ),
         expected_output=(
-            "Um objeto estruturado com persona_deduzida, tom_de_voz_deduzido e "
-            "diretrizes_eticas_nicho."
+            "Um objeto estruturado com persona_deduzida, tom_de_voz_deduzido, "
+            "diretrizes_eticas_nicho e servicos_oferecidos."
         ),
         agent=agente,
         output_pydantic=PerfilDeMarca,
@@ -112,9 +126,11 @@ def run_onboarding(empresa_id: str, respostas_brutas: str, setor_macro: str = ""
         persona_deduzida=perfil.persona_deduzida,
         tom_de_voz_deduzido=perfil.tom_de_voz_deduzido,
         diretrizes_eticas_nicho=perfil.diretrizes_eticas_nicho,
+        servicos_oferecidos=perfil.servicos_oferecidos,
     )
     return {
         "persona_deduzida": empresa.persona_deduzida,
         "tom_de_voz_deduzido": empresa.tom_de_voz_deduzido,
         "diretrizes_eticas_nicho": empresa.diretrizes_eticas_nicho,
+        "servicos_oferecidos": empresa.servicos_oferecidos,
     }

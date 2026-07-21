@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS empresas (
     persona_deduzida TEXT,
     tom_de_voz_deduzido TEXT,
     diretrizes_eticas_nicho TEXT, -- Regras especificas (ex: normas CFM/CFP para saude)
+    servicos_oferecidos TEXT,     -- Servicos/produtos que o cliente mais vende (preenchido 1x no onboarding)
 
     -- Controle de Creditos Mensais (Plano: 30 artes / 8 videos)
     limite_artes_mensal INT DEFAULT 30,

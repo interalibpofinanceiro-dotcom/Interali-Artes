@@ -67,7 +67,7 @@ if empresa_id_selecionada == "__nova__":
             "Sub-nicho especifico",
             placeholder="Ex: " + ", ".join(cfg_preview.sub_nicho_exemplos[:3]),
         )
-        cor_primaria = st.color_picker("Cor primaria da marca", "#C81E1E")
+        cor_primaria = st.color_picker("Cor primaria da marca", "#2d4d4c")
         cor_secundaria = st.color_picker("Cor secundaria da marca", "#FFFFFF")
         logo_upload = st.file_uploader("Logotipo (opcional)", type=["png", "jpg", "jpeg"])
         criar = st.form_submit_button("Criar empresa")
@@ -124,8 +124,11 @@ with tela1:
     st.header("Chat de Onboarding Automatizado")
     st.write(
         f"Setor selecionado: **{cfg_setor.label}**. Conte, com suas palavras, "
-        "sobre o seu negocio. A IA (Agente 0) vai deduzir sozinha a persona, "
-        "o tom de voz e as diretrizes eticas da sua marca, adaptadas ao seu setor."
+        "sobre o seu negocio - inclua **quais servicos voce mais vende**. A IA "
+        "(Agente 0) vai deduzir sozinha a persona, o tom de voz, as diretrizes "
+        "eticas e os servicos cadastrados da sua marca, adaptados ao seu setor. "
+        "Esse cadastro e feito **uma unica vez** (no momento da assinatura) e "
+        "sera reaproveitado automaticamente em toda peca gerada dai em diante."
     )
 
     chave_historico = f"chat_onboarding_{empresa_id}"
@@ -155,7 +158,10 @@ with tela1:
                 "Perfil de marca atualizado com sucesso! ✅\n\n"
                 f"**Persona deduzida:**\n{perfil['persona_deduzida']}\n\n"
                 f"**Tom de voz deduzido:**\n{perfil['tom_de_voz_deduzido']}\n\n"
-                f"**Diretrizes eticas do nicho:**\n{perfil['diretrizes_eticas_nicho']}"
+                f"**Servicos que voce mais vende:**\n{perfil['servicos_oferecidos']}\n\n"
+                f"**Diretrizes eticas do nicho:**\n{perfil['diretrizes_eticas_nicho']}\n\n"
+                "_Este cadastro e feito uma unica vez - as proximas pecas vao "
+                "reaproveitar esses servicos automaticamente, sem perguntar de novo._"
             )
             st.markdown(resumo)
         st.session_state[chave_historico].append({"role": "assistant", "content": resumo})
@@ -210,6 +216,17 @@ with tela3:
 
     foto = st.file_uploader("Foto/imagem bruta", type=["png", "jpg", "jpeg"])
     objetivo = st.radio("Objetivo do post", options=["arte", "video"], horizontal=True)
+    briefing_usuario = st.text_area(
+        "Qual o tipo de banner voce deseja?",
+        placeholder=(
+            "Descreva com suas palavras o que quer comunicar nesta peca "
+            "(ex: 'quero divulgar 20% de desconto na consulta esta semana, "
+            "foco em fisioterapia esportiva'). A IA vai usar isso, junto com "
+            "os servicos ja cadastrados no onboarding, para montar o gancho, "
+            "o desenvolvimento e o CTA do texto."
+        ),
+        height=120,
+    )
 
     gerar = st.button("✨ Gerar peca com a IA", type="primary", disabled=foto is None)
 
@@ -222,6 +239,7 @@ with tela3:
                 empresa_id=empresa_id,
                 image_path=str(caminho_upload),
                 objetivo=objetivo,
+                briefing_usuario=briefing_usuario,
             )
 
         if resultado.get("bloqueado_etica"):
@@ -247,7 +265,9 @@ with tela3:
 
             with col_texto:
                 st.subheader("Textos gerados (Agente 2)")
-                st.markdown(f"**Hook:** {resultado['hook']}")
+                st.markdown(f"**Gancho:** {resultado['gancho']}")
+                st.markdown(f"**Desenvolvimento:** {resultado['desenvolvimento']}")
+                st.markdown(f"**CTA:** {resultado['cta']}")
                 st.markdown(f"**Texto do banner:** {resultado['texto_banner']}")
                 st.text_area("Legenda do Instagram", resultado["legenda_instagram"], height=200)
 
