@@ -1,15 +1,13 @@
-"""Interali AI - Plataforma SaaS White Label Multi-Nicho.
+"""Interali AI - Plataforma SaaS Multi-Nicho (nicho em texto livre).
 
-Setores atendidos: Saude & Bem-Estar, Beleza & Estetica, Marketing & Social
-Media e Gastronomia (ver interali_ai/nichos.py).
-
-Quatro telas:
- 1) Cadastro com selecao de Setor (selectbox) / Sub-nicho
- 2) Chat de Onboarding Automatizado (Agente 0 - Branding Profiler), com
-    perguntas adaptadas ao setor escolhido
+Multi-tenant: cada usuario loga e so enxerga a propria empresa - nao ha
+seletor de "empresa ativa". Fluxo:
+ 1) Login/Cadastro (tela unica, sem usuario logado)
+ 2) Perfil da Marca (nicho livre, identidade visual, persona com sugestao de
+    IA) - obrigatorio antes de gerar pecas, editavel a qualquer momento depois
  3) Dashboard de creditos (saldo mensal de artes/videos)
- 4) Upload da foto/video + geracao da peca (Agentes 1-5), com tratamento
-    etico e estetico do nicho
+ 4) Gerar Peca: upload proprio OU banco de imagens gratuito (Pexels) + IA
+    (Agentes 1-5), com tratamento etico e estetico do nicho
 
 Rode com: streamlit run app.py
 """
@@ -20,176 +18,254 @@ from pathlib import Path
 import streamlit as st
 
 from interali_ai import config
-from interali_ai.crews.onboarding_crew import run_onboarding
+from interali_ai.crews.onboarding_crew import salvar_perfil_marca, sugerir_persona
 from interali_ai.crews.production_crew import run_production_pipeline
 from interali_ai.database.db import init_db
-from interali_ai.nichos import listar_setores, obter_config_setor
-from interali_ai.services import company_service, credit_manager
+from interali_ai.services import auth_service, company_service, credit_manager
+from interali_ai.services.auth_service import (
+    CredenciaisInvalidasError,
+    EmailInvalidoError,
+    EmailJaCadastradoError,
+)
+from interali_ai.tools.stock_photo_tool import BuscaImagensError, baixar_imagem, buscar_imagens
 
 st.set_page_config(page_title="Interali AI", page_icon="✨", layout="wide")
 
 init_db()
 
+
+def _injetar_css_responsivo() -> None:
+    st.markdown(
+        """
+        <style>
+        /* Alvo de toque confortavel para botoes no mobile e desktop */
+        div[data-testid="stButton"] button, div[data-testid="stDownloadButton"] button {
+            min-height: 2.75rem;
+            font-size: 1rem;
+            border-radius: 0.6rem;
+        }
+        @media (max-width: 640px) {
+            /* Empilha colunas verticalmente no celular */
+            div[data-testid="stHorizontalBlock"] {
+                flex-direction: column;
+            }
+            div[data-testid="stHorizontalBlock"] > div {
+                width: 100% !important;
+            }
+            div[data-testid="stFileUploader"], div[data-testid="stTextInput"],
+            div[data-testid="stTextArea"] {
+                width: 100% !important;
+            }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+_injetar_css_responsivo()
+
 # --------------------------------------------------------------------------- #
-# Sidebar - selecao / criacao da empresa (cliente White Label)
+# Autenticacao - gate de login/cadastro (sem usuario logado, para aqui)
 # --------------------------------------------------------------------------- #
 
+if "usuario_id" not in st.session_state:
+    st.title("✨ Interali AI")
+    st.caption("Plataforma SaaS de artes e videos com IA para o seu negocio.")
+
+    aba_entrar, aba_criar = st.tabs(["Entrar", "Criar conta"])
+
+    with aba_entrar:
+        with st.form("form_login"):
+            email_login = st.text_input("E-mail")
+            senha_login = st.text_input("Senha", type="password")
+            entrar = st.form_submit_button("Entrar", type="primary")
+
+            if entrar:
+                try:
+                    usuario = auth_service.autenticar(email_login, senha_login)
+                    st.session_state["usuario_id"] = usuario.id
+                    st.rerun()
+                except CredenciaisInvalidasError as exc:
+                    st.error(str(exc))
+
+    with aba_criar:
+        with st.form("form_cadastro"):
+            nome_comercial = st.text_input("Nome comercial", placeholder="ex: Clinica Boa Vida")
+            cnpj_cpf = st.text_input("CNPJ ou CPF")
+            email_cadastro = st.text_input("E-mail do responsavel")
+            senha_cadastro = st.text_input("Senha (minimo 6 caracteres)", type="password")
+            criar_conta = st.form_submit_button("Criar conta", type="primary")
+
+            if criar_conta:
+                if not nome_comercial or not email_cadastro or len(senha_cadastro) < 6:
+                    st.error(
+                        "Preencha nome comercial, e-mail e uma senha com pelo menos 6 caracteres."
+                    )
+                else:
+                    try:
+                        usuario = auth_service.criar_usuario(
+                            email=email_cadastro,
+                            senha=senha_cadastro,
+                            nome_comercial=nome_comercial,
+                            cnpj_cpf=cnpj_cpf,
+                        )
+                        st.session_state["usuario_id"] = usuario.id
+                        st.rerun()
+                    except (EmailInvalidoError, EmailJaCadastradoError) as exc:
+                        st.error(str(exc))
+    st.stop()
+
+empresa = auth_service.obter_empresa_do_usuario(st.session_state["usuario_id"])
+if empresa is None:
+    st.error("Conta invalida. Faca login novamente.")
+    st.session_state.clear()
+    st.stop()
+
+empresa_id = empresa.id
+
 st.sidebar.title("✨ Interali AI")
-st.sidebar.caption("Plataforma Multi-Nicho: Saude, Beleza, Marketing e Gastronomia")
+st.sidebar.caption(empresa.nome_comercial or "")
 if not config.USE_LLM:
     st.sidebar.warning(
         "OPENAI_API_KEY nao configurada. Rodando em **modo simulado** "
-        "(sem chamadas reais de LLM). Configure o arquivo .env para usar a IA de verdade."
+        "(sem chamadas reais de LLM)."
     )
-
-empresas = company_service.listar_empresas()
-opcoes = {f"{e.nome_comercial} ({e.id})": e.id for e in empresas}
-opcoes["+ Nova empresa..."] = "__nova__"
-
-escolha = st.sidebar.selectbox("Empresa ativa", list(opcoes.keys()))
-empresa_id_selecionada = opcoes[escolha]
-
-if empresa_id_selecionada == "__nova__":
-    with st.sidebar.form("nova_empresa_form"):
-        st.subheader("Cadastrar nova empresa")
-        novo_id = st.text_input("ID da empresa (slug unico)", placeholder="ex: clinica-boa-vida")
-        novo_nome = st.text_input("Nome comercial", placeholder="ex: Clinica Boa Vida")
-
-        setores = listar_setores()
-        labels_setor = [label for _valor, label in setores]
-        indice_setor = st.selectbox(
-            "Setor", options=range(len(setores)), format_func=lambda i: labels_setor[i]
-        )
-        novo_setor_macro = setores[indice_setor][0]
-        cfg_preview = obter_config_setor(novo_setor_macro)
-
-        novo_sub_nicho = st.text_input(
-            "Sub-nicho especifico",
-            placeholder="Ex: " + ", ".join(cfg_preview.sub_nicho_exemplos[:3]),
-        )
-        cor_primaria = st.color_picker("Cor primaria da marca", "#2d4d4c")
-        cor_secundaria = st.color_picker("Cor secundaria da marca", "#FFFFFF")
-        logo_upload = st.file_uploader("Logotipo (opcional)", type=["png", "jpg", "jpeg"])
-        criar = st.form_submit_button("Criar empresa")
-
-        if criar:
-            if not novo_id or not novo_nome:
-                st.sidebar.error("Informe ao menos o ID e o Nome comercial.")
-            else:
-                logo_path = None
-                if logo_upload is not None:
-                    logo_path = str(config.UPLOADS_DIR / f"{novo_id}_logo_{logo_upload.name}")
-                    Path(logo_path).write_bytes(logo_upload.getbuffer())
-
-                company_service.criar_empresa(
-                    empresa_id=novo_id,
-                    nome_comercial=novo_nome,
-                    setor_macro=novo_setor_macro,
-                    sub_nicho=novo_sub_nicho,
-                    logo_url=logo_path,
-                    cores_hex={"primaria": cor_primaria, "secundaria": cor_secundaria},
-                )
-                st.sidebar.success(f"Empresa '{novo_nome}' criada!")
-                st.session_state["empresa_ativa"] = novo_id
-                st.rerun()
-    st.info("Cadastre uma empresa na barra lateral para comecar.")
-    st.stop()
-else:
-    st.session_state["empresa_ativa"] = empresa_id_selecionada
-
-empresa_id = st.session_state["empresa_ativa"]
-empresa = company_service.obter_empresa(empresa_id)
-cfg_setor = obter_config_setor(empresa.setor_macro)
-
-st.sidebar.markdown("---")
-st.sidebar.caption(f"Setor: {cfg_setor.label}")
-st.sidebar.caption(f"Sub-nicho: {empresa.sub_nicho or '-'}")
-st.sidebar.caption(f"Onboarding concluido: {'Sim' if empresa.onboarding_completo() else 'Nao'}")
-if cfg_setor.bloqueio_etico:
-    st.sidebar.info("🛡️ Este setor possui trava etica ativa (normas de conselho de classe).")
+if st.sidebar.button("🚪 Sair"):
+    st.session_state.clear()
+    st.rerun()
 
 # --------------------------------------------------------------------------- #
-# Abas principais
+# Badge de creditos - visivel em qualquer tela, no topo do painel
 # --------------------------------------------------------------------------- #
 
-tela1, tela2, tela3 = st.tabs(
-    ["💬 Onboarding Automatizado", "📊 Dashboard de Creditos", "🎨 Gerar Peca"]
+st.title("✨ Interali AI")
+resumo_topo = credit_manager.resumo_creditos(empresa_id)
+col_artes, col_videos = st.columns(2)
+col_artes.metric("Artes disponiveis este mes", f"{resumo_topo['artes_restantes']} / {resumo_topo['artes_limite']}")
+col_videos.metric("Videos disponiveis este mes", f"{resumo_topo['videos_restantes']} / {resumo_topo['videos_limite']}")
+st.divider()
+
+
+# --------------------------------------------------------------------------- #
+# Perfil da Marca (nicho livre + identidade visual + persona)
+# --------------------------------------------------------------------------- #
+
+_SUGESTOES_NICHO = (
+    "Doceria Gourmet",
+    "Psicologia Infantil",
+    "Salao de Beleza Afro",
+    "Consultoria de Marketing B2B",
+    "Petshop",
+    "Escritorio de Advocacia",
 )
 
-# --------------------------------------------------------------------------- #
-# Tela 1 - Chat de Onboarding Automatizado
-# --------------------------------------------------------------------------- #
 
-with tela1:
-    st.header("Chat de Onboarding Automatizado")
+def _renderizar_perfil_marca(empresa) -> None:
+    st.header("Perfil da Marca")
     st.write(
-        f"Setor selecionado: **{cfg_setor.label}**. Conte, com suas palavras, "
-        "sobre o seu negocio - inclua **quais servicos voce mais vende**. A IA "
-        "(Agente 0) vai deduzir sozinha a persona, o tom de voz, as diretrizes "
-        "eticas e os servicos cadastrados da sua marca, adaptados ao seu setor. "
-        "Esse cadastro e feito **uma unica vez** (no momento da assinatura) e "
-        "sera reaproveitado automaticamente em toda peca gerada dai em diante."
+        "Preencha uma unica vez: nicho, identidade visual e persona do seu "
+        "negocio. A IA usa isso automaticamente em toda peca gerada dai em "
+        "diante - voce pode voltar aqui e editar quando quiser."
     )
 
-    chave_historico = f"chat_onboarding_{empresa_id}"
-    if chave_historico not in st.session_state:
-        st.session_state[chave_historico] = [
-            {"role": "assistant", "content": cfg_setor.pergunta_inicial}
-        ]
+    st.subheader("Nicho")
+    pill_nicho = st.pills(
+        "Sugestoes (clique para preencher, ou digite o seu abaixo)",
+        _SUGESTOES_NICHO,
+        selection_mode="single",
+        key=f"pill_nicho_{empresa.id}",
+    )
+    if pill_nicho:
+        st.session_state[f"nicho_input_{empresa.id}"] = pill_nicho
+    nicho = st.text_input(
+        "Qual o nicho do seu negocio?",
+        value=empresa.sub_nicho or "",
+        placeholder="Ex: Doceria Gourmet",
+        key=f"nicho_input_{empresa.id}",
+    )
 
-    for msg in st.session_state[chave_historico]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    st.subheader("Identidade visual")
+    cores_atuais = empresa.cores_hex or {}
+    logo_upload = st.file_uploader("Logotipo (PNG com fundo transparente)", type=["png"])
+    col_c1, col_c2, col_c3 = st.columns(3)
+    cor_primaria = col_c1.color_picker("Cor primaria", cores_atuais.get("primaria", "#2d4d4c"))
+    cor_secundaria = col_c2.color_picker("Cor secundaria", cores_atuais.get("secundaria", "#FFFFFF"))
+    cor_destaque = col_c3.color_picker("Cor de destaque", cores_atuais.get("destaque", "#C9A227"))
 
-    resposta_usuario = st.chat_input("Escreva sua resposta...")
-    if resposta_usuario:
-        st.session_state[chave_historico].append({"role": "user", "content": resposta_usuario})
-        with st.chat_message("user"):
-            st.markdown(resposta_usuario)
+    st.subheader("Persona & Instrucoes da IA")
+    st.info(
+        "Descreva aqui para quem voce vende, o tom de voz desejado e os "
+        "diferenciais da sua marca. Quanto mais detalhes colocar, mais "
+        "precisa a IA sera."
+    )
+    if st.button("✨ Gerar Sugestao de Persona com IA", disabled=not nicho.strip()):
+        with st.spinner("Gerando sugestao..."):
+            st.session_state[f"persona_input_{empresa.id}"] = sugerir_persona(nicho)
+    persona = st.text_area(
+        "Persona e instrucoes de negocio",
+        value=empresa.persona_deduzida or "",
+        placeholder=(
+            "Ex: Vendo para mulheres de 25 a 45 anos que buscam praticidade. "
+            "Tom de voz acolhedor e direto. Meu diferencial e o atendimento "
+            "personalizado e os ingredientes artesanais."
+        ),
+        height=160,
+        key=f"persona_input_{empresa.id}",
+    )
 
-        with st.chat_message("assistant"):
-            with st.spinner("Analisando suas respostas e estruturando o perfil de marca..."):
-                perfil = run_onboarding(
-                    empresa_id=empresa_id,
-                    respostas_brutas=resposta_usuario,
-                    setor_macro=empresa.setor_macro or "",
-                )
-            resumo = (
-                "Perfil de marca atualizado com sucesso! ✅\n\n"
-                f"**Persona deduzida:**\n{perfil['persona_deduzida']}\n\n"
-                f"**Tom de voz deduzido:**\n{perfil['tom_de_voz_deduzido']}\n\n"
-                f"**Servicos que voce mais vende:**\n{perfil['servicos_oferecidos']}\n\n"
-                f"**Diretrizes eticas do nicho:**\n{perfil['diretrizes_eticas_nicho']}\n\n"
-                "_Este cadastro e feito uma unica vez - as proximas pecas vao "
-                "reaproveitar esses servicos automaticamente, sem perguntar de novo._"
-            )
-            st.markdown(resumo)
-        st.session_state[chave_historico].append({"role": "assistant", "content": resumo})
+    if st.button("💾 Salvar Perfil", type="primary", disabled=not (nicho.strip() and persona.strip())):
+        logo_url = empresa.logo_url
+        if logo_upload is not None:
+            logo_url = str(config.UPLOADS_DIR / f"{empresa.id}_logo_{logo_upload.name}")
+            Path(logo_url).write_bytes(logo_upload.getbuffer())
+
+        company_service.atualizar_perfil(
+            empresa_id=empresa.id,
+            logo_url=logo_url,
+            cores_hex={
+                "primaria": cor_primaria,
+                "secundaria": cor_secundaria,
+                "destaque": cor_destaque,
+            },
+        )
+        with st.spinner("Salvando perfil e ajustando diretrizes eticas do seu nicho..."):
+            salvar_perfil_marca(empresa.id, nicho=nicho, persona=persona)
+        st.success("Perfil da Marca salvo!")
+        st.rerun()
+
+
+if not empresa.onboarding_completo():
+    st.info(
+        "Complete o Perfil da Marca abaixo para comecar a gerar artes e videos."
+    )
+    _renderizar_perfil_marca(empresa)
+    st.stop()
 
 # --------------------------------------------------------------------------- #
-# Tela 2 - Dashboard de creditos
+# Abas principais (Perfil completo)
 # --------------------------------------------------------------------------- #
 
-with tela2:
+tela_perfil, tela_dashboard, tela_gerar = st.tabs(
+    ["🧬 Perfil da Marca", "📊 Dashboard de Creditos", "🎨 Gerar Peca"]
+)
+
+with tela_perfil:
+    _renderizar_perfil_marca(empresa)
+
+# --------------------------------------------------------------------------- #
+# Dashboard de creditos
+# --------------------------------------------------------------------------- #
+
+with tela_dashboard:
     st.header("Dashboard de Creditos")
     resumo = credit_manager.resumo_creditos(empresa_id)
 
     col1, col2 = st.columns(2)
-    col1.metric(
-        "Artes disponiveis este mes",
-        f"{resumo['artes_restantes']} / {resumo['artes_limite']}",
-    )
-    col2.metric(
-        "Videos disponiveis este mes",
-        f"{resumo['videos_restantes']} / {resumo['videos_limite']}",
-    )
+    col1.metric("Artes disponiveis este mes", f"{resumo['artes_restantes']} / {resumo['artes_limite']}")
+    col2.metric("Videos disponiveis este mes", f"{resumo['videos_restantes']} / {resumo['videos_limite']}")
 
-    st.info(
-        f"Voce ainda tem **{resumo['artes_restantes']} artes** e "
-        f"**{resumo['videos_restantes']} videos** este mes."
-    )
     st.caption(f"Proxima renovacao do ciclo: {resumo['data_renovacao']}")
-
     st.progress(
         resumo["artes_restantes"] / resumo["artes_limite"] if resumo["artes_limite"] else 0,
         text="Saldo de artes",
@@ -200,26 +276,63 @@ with tela2:
     )
 
 # --------------------------------------------------------------------------- #
-# Tela 3 - Upload da foto + geracao da peca
+# Gerar Peca - upload proprio OU banco de imagens gratuito + video
 # --------------------------------------------------------------------------- #
 
-with tela3:
+with tela_gerar:
     st.header("Gerar Peca (Banner ou Video)")
-    st.caption(f"Tratamento visual e de copy adaptados ao setor: {cfg_setor.label}")
-
-    if not empresa.onboarding_completo():
-        st.warning(
-            "Esta empresa ainda nao concluiu o Onboarding Automatizado. "
-            "Va na aba 'Onboarding Automatizado' antes de gerar pecas para "
-            "obter textos alinhados a persona do cliente."
-        )
+    st.caption(f"Tratamento visual e de copy adaptados ao nicho: {empresa.sub_nicho}")
 
     objetivo = st.radio("Objetivo do post", options=["arte", "video"], horizontal=True)
 
     foto = None
     video_bruto = None
+    caminho_banco_imagens = None
+
     if objetivo == "arte":
-        foto = st.file_uploader("Foto/imagem bruta", type=["png", "jpg", "jpeg"])
+        opcoes_origem = ["📤 Enviar minha foto"]
+        if config.USE_BANCO_IMAGENS:
+            opcoes_origem.append("🖼️ Banco de imagens gratuito")
+        origem_imagem = st.radio("Origem da imagem", opcoes_origem, horizontal=True)
+        if not config.USE_BANCO_IMAGENS:
+            st.caption(
+                "Banco de imagens desabilitado - configure PEXELS_API_KEY no "
+                ".env para habilitar a busca de fotos gratuitas."
+            )
+
+        if origem_imagem == "📤 Enviar minha foto":
+            foto = st.file_uploader("Foto/imagem bruta", type=["png", "jpg", "jpeg"])
+        else:
+            busca = st.text_input(
+                "Buscar fotos gratuitas",
+                placeholder="Ex: cabelo hidratado, pizza saindo do forno, consultorio acolhedor",
+            )
+            if st.button("🔎 Buscar fotos"):
+                try:
+                    st.session_state["resultados_banco_imagens"] = buscar_imagens(busca)
+                except BuscaImagensError as exc:
+                    st.error(str(exc))
+                    st.session_state["resultados_banco_imagens"] = []
+                except Exception:
+                    st.error("Nao foi possivel buscar fotos agora. Tente novamente.")
+                    st.session_state["resultados_banco_imagens"] = []
+
+            resultados = st.session_state.get("resultados_banco_imagens", [])
+            if resultados:
+                colunas_galeria = st.columns(3)
+                for indice, foto_banco in enumerate(resultados):
+                    with colunas_galeria[indice % 3]:
+                        st.image(foto_banco["thumbnail_url"], use_container_width=True)
+                        st.caption(f"Foto: {foto_banco['fotografo']}")
+                        if st.button("Selecionar", key=f"selecionar_{foto_banco['id']}"):
+                            st.session_state["caminho_banco_imagens"] = baixar_imagem(
+                                foto_banco["url_original"]
+                            )
+                            st.success("Imagem selecionada!")
+
+            caminho_banco_imagens = st.session_state.get("caminho_banco_imagens")
+            if caminho_banco_imagens:
+                st.image(caminho_banco_imagens, caption="Imagem selecionada", width=220)
     else:
         video_bruto = st.file_uploader("Seu video (MP4, MOV ou WEBM)", type=["mp4", "mov", "webm"])
         st.caption(
@@ -233,23 +346,29 @@ with tela3:
         "Qual o tipo de banner voce deseja?",
         placeholder=(
             "Descreva com suas palavras o que quer comunicar nesta peca "
-            "(ex: 'quero divulgar 20% de desconto na consulta esta semana, "
-            "foco em fisioterapia esportiva'). A IA vai usar isso, junto com "
-            "os servicos ja cadastrados no onboarding, para montar o gancho, "
-            "o desenvolvimento e o CTA do texto."
+            "(ex: 'quero avisar que temos vaga para promocao de hidratacao "
+            "nesta terca'). A IA vai usar isso, junto com a persona "
+            "cadastrada, para montar o gancho, o desenvolvimento e o CTA."
         ),
         height=120,
     )
 
-    arquivo_pronto = foto is not None if objetivo == "arte" else video_bruto is not None
+    if objetivo == "arte":
+        arquivo_pronto = foto is not None or caminho_banco_imagens is not None
+    else:
+        arquivo_pronto = video_bruto is not None
+
     gerar = st.button("✨ Gerar peca com a IA", type="primary", disabled=not arquivo_pronto)
 
     if gerar and arquivo_pronto:
         caminho_imagem = None
         caminho_video = None
         if objetivo == "arte":
-            caminho_imagem = config.UPLOADS_DIR / foto.name
-            caminho_imagem.write_bytes(foto.getbuffer())
+            if caminho_banco_imagens:
+                caminho_imagem = caminho_banco_imagens
+            else:
+                caminho_imagem = str(config.UPLOADS_DIR / foto.name)
+                Path(caminho_imagem).write_bytes(foto.getbuffer())
         else:
             caminho_video = config.UPLOADS_DIR / video_bruto.name
             caminho_video.write_bytes(video_bruto.getbuffer())
@@ -258,7 +377,7 @@ with tela3:
             resultado = run_production_pipeline(
                 empresa_id=empresa_id,
                 objetivo=objetivo,
-                image_path=str(caminho_imagem) if caminho_imagem else None,
+                image_path=caminho_imagem,
                 video_path_bruto=str(caminho_video) if caminho_video else None,
                 briefing_usuario=briefing_usuario,
             )

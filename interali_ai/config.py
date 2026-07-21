@@ -22,6 +22,11 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'interali.db')
 # permitindo rodar e testar o MVP (Streamlit) sem depender de uma API externa.
 USE_LLM = bool(OPENAI_API_KEY)
 
+# Banco de imagens gratuito (Pexels - https://www.pexels.com/api/). Sem chave
+# configurada, a aba "Banco de Imagens" fica desabilitada (so upload proprio).
+PEXELS_API_KEY = os.getenv("PEXELS_API_KEY", "").strip()
+USE_BANCO_IMAGENS = bool(PEXELS_API_KEY)
+
 ASSETS_DIR = BASE_DIR / "assets"
 UPLOADS_DIR = ASSETS_DIR / "uploads"
 PROCESSED_DIR = ASSETS_DIR / "processed"

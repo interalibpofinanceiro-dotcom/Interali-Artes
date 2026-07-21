@@ -37,9 +37,12 @@ _LAYOUT_POR_SETOR: dict[str, tuple[float, float]] = {
 }
 
 
-def _cores(cores_hex: dict | None) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+def _cores(
+    cores_hex: dict | None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]:
     primaria = (200, 30, 30)
     secundaria = (255, 255, 255)
+    destaque = secundaria
     if cores_hex:
         if cores_hex.get("primaria") or cores_hex.get("primary"):
             hex_str = (cores_hex.get("primaria") or cores_hex.get("primary")).lstrip("#")
@@ -47,7 +50,11 @@ def _cores(cores_hex: dict | None) -> tuple[tuple[int, int, int], tuple[int, int
         if cores_hex.get("secundaria") or cores_hex.get("secondary"):
             hex_str = (cores_hex.get("secundaria") or cores_hex.get("secondary")).lstrip("#")
             secundaria = tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore
-    return primaria, secundaria
+            destaque = secundaria
+        if cores_hex.get("destaque") or cores_hex.get("accent"):
+            hex_str = (cores_hex.get("destaque") or cores_hex.get("accent")).lstrip("#")
+            destaque = tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore
+    return primaria, secundaria, destaque
 
 
 def _fonte(tamanho: int) -> ImageFont.ImageFont:
@@ -64,7 +71,7 @@ def _construir_overlay_marca(
     base - sobreposto em todos os frames do video via ffmpeg."""
     cfg = obter_config_setor(setor_macro)
     barra_fracao, fonte_fracao = _LAYOUT_POR_SETOR.get(cfg.valor, (0.18, 0.28))
-    cor_primaria, cor_secundaria = _cores(cores_hex)
+    cor_primaria, cor_secundaria, cor_destaque = _cores(cores_hex)
 
     overlay = Image.new("RGBA", (_LARGURA_SAIDA, _ALTURA_SAIDA), (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -74,6 +81,9 @@ def _construir_overlay_marca(
     draw.rectangle(
         [(0, topo_barra), (_LARGURA_SAIDA, _ALTURA_SAIDA)],
         fill=cor_primaria + (235,),
+    )
+    draw.line(
+        [(0, topo_barra), (_LARGURA_SAIDA, topo_barra)], fill=cor_destaque + (255,), width=4
     )
 
     padding = int(barra_altura * 0.25)

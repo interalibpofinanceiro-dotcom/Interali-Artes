@@ -59,23 +59,15 @@ class VeredictoQA(BaseModel):
 # --------------------------------------------------------------------------- #
 
 _PROMPT_COPY = """
-Voce esta criando conteudo para a empresa "{nome_comercial}" (setor: {setor_label}, \
-sub-nicho: {sub_nicho}).
+Voce esta criando conteudo para a empresa "{nome_comercial}" (nicho: {nicho}).
 
-Persona deduzida do cliente:
+Persona e instrucoes de negocio cadastradas pelo cliente no Perfil da Marca:
 \"\"\"{persona}\"\"\"
-
-Tom de voz deduzido do cliente:
-\"\"\"{tom_de_voz}\"\"\"
-
-Servicos/produtos que o cliente mais vende (cadastrados uma unica vez no \
-onboarding):
-\"\"\"{servicos}\"\"\"
 
 Diretrizes eticas e de comunicacao (respeite rigorosamente):
 \"\"\"{diretrizes}\"\"\"
 
-Tom exigido pelo setor: {tom_setor}
+Tom exigido pelo perfil visual deste tipo de negocio: {tom_setor}
 {regra_de_ouro}
 
 O objetivo do post e: {objetivo}.
@@ -84,7 +76,7 @@ Briefing do cliente para ESTA peca especifica (o que ele quer comunicar / que \
 tipo de banner deseja):
 \"\"\"{briefing_usuario}\"\"\"
 
-A partir do briefing acima (cruzado com os servicos cadastrados e a persona), \
+A partir do briefing acima (cruzado com a persona/instrucoes de negocio), \
 identifique e estruture o texto em:
 1. Gancho (Hook): frase que prende a atencao nos primeiros segundos.
 2. Desenvolvimento: corpo do texto que conecta a dor/desejo do publico ao \
@@ -94,16 +86,15 @@ whatsapp), coerente com o objetivo do post.
 4. Uma frase curta de impacto (derivada do gancho) para estampar no banner.
 5. A legenda completa do Instagram, unindo gancho + desenvolvimento + cta.
 
-Respeite rigorosamente a persona, o tom de voz e as diretrizes eticas acima. \
-Se o briefing do cliente estiver vazio, baseie-se apenas nos servicos \
-cadastrados e na persona.
+Respeite rigorosamente a persona e as diretrizes eticas acima. Se o briefing \
+do cliente estiver vazio, baseie-se apenas na persona/instrucoes cadastradas.
 """
 
 
 def _copy_simulado(empresa, objetivo: str, briefing_usuario: str = "") -> CopyGerado:
     cfg = obter_config_setor(empresa.setor_macro)
     nome = empresa.nome_comercial or "seu negocio"
-    servicos = empresa.servicos_oferecidos or cfg.label
+    persona = empresa.persona_deduzida or cfg.label
     briefing = briefing_usuario.strip() if briefing_usuario else ""
 
     if cfg.valor == "saude":
@@ -112,7 +103,7 @@ def _copy_simulado(empresa, objetivo: str, briefing_usuario: str = "") -> CopyGe
         gancho = f"[Simulado] Voce nunca viu {nome} assim antes..."
 
     desenvolvimento = (
-        f"[Modo simulado] {nome} atua com {servicos.strip()[:180]}."
+        f"[Modo simulado] {nome}: {persona.strip()[:180]}."
         + (f" Sobre o que voce pediu: \"{briefing[:180]}\"." if briefing else "")
         + " Configure OPENAI_API_KEY no .env para um desenvolvimento gerado de verdade."
     )
@@ -144,11 +135,8 @@ def _copy_via_llm(empresa, objetivo: str, briefing_usuario: str = "") -> CopyGer
     task = Task(
         description=_PROMPT_COPY.format(
             nome_comercial=empresa.nome_comercial or "",
-            setor_label=cfg.label,
-            sub_nicho=empresa.sub_nicho or "",
+            nicho=empresa.sub_nicho or cfg.label,
             persona=empresa.persona_deduzida or "",
-            tom_de_voz=empresa.tom_de_voz_deduzido or "",
-            servicos=empresa.servicos_oferecidos or "",
             diretrizes=empresa.diretrizes_eticas_nicho or cfg.diretrizes_eticas_padrao,
             tom_setor=cfg.tom_copywriting,
             regra_de_ouro=cfg.regra_de_ouro or "",

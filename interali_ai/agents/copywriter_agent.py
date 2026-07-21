@@ -19,14 +19,13 @@ def build_copywriter_agent(setor_macro: str = "") -> Agent:
         role=f"Estrategista de Copywriting (Niche Copywriter) - {cfg.label}",
         goal=(
             "A partir do briefing do cliente (o que ele quer comunicar nesta "
-            "peca especifica) e dos servicos_oferecidos cadastrados no "
-            "onboarding, identificar e estruturar o texto em tres partes "
-            "classicas de copywriting: 1) Gancho (hook) que prende atencao nos "
-            "primeiros segundos; 2) Desenvolvimento, que conecta a dor/desejo "
-            "do publico ao servico oferecido; 3) CTA (chamada para acao) clara "
-            "e especifica. Sempre respeitando a persona_deduzida e o "
-            "tom_de_voz_deduzido ja armazenados do cliente. Tom exigido pelo "
-            f"setor: {cfg.tom_copywriting}{regra_de_ouro}"
+            "peca especifica) e da persona/instrucoes de negocio cadastradas "
+            "no Perfil da Marca, identificar e estruturar o texto em tres "
+            "partes classicas de copywriting: 1) Gancho (hook) que prende "
+            "atencao nos primeiros segundos; 2) Desenvolvimento, que conecta a "
+            "dor/desejo do publico ao servico oferecido; 3) CTA (chamada para "
+            "acao) clara e especifica. Sempre respeitando a persona cadastrada "
+            f"pelo cliente. Tom exigido pelo setor: {cfg.tom_copywriting}{regra_de_ouro}"
         ),
         backstory=(
             f"Voce e um copywriter especializado em {cfg.label} para redes "

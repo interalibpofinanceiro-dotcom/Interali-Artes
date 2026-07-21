@@ -20,9 +20,12 @@ from interali_ai import config
 from interali_ai.nichos import obter_config_setor
 
 
-def _cores(cores_hex: dict | None) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+def _cores(
+    cores_hex: dict | None,
+) -> tuple[tuple[int, int, int], tuple[int, int, int], tuple[int, int, int]]:
     primaria = (200, 30, 30)
     secundaria = (255, 255, 255)
+    destaque = secundaria
     if cores_hex:
         if cores_hex.get("primaria") or cores_hex.get("primary"):
             hex_str = (cores_hex.get("primaria") or cores_hex.get("primary")).lstrip("#")
@@ -30,7 +33,11 @@ def _cores(cores_hex: dict | None) -> tuple[tuple[int, int, int], tuple[int, int
         if cores_hex.get("secundaria") or cores_hex.get("secondary"):
             hex_str = (cores_hex.get("secundaria") or cores_hex.get("secondary")).lstrip("#")
             secundaria = tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore
-    return primaria, secundaria
+            destaque = secundaria
+        if cores_hex.get("destaque") or cores_hex.get("accent"):
+            hex_str = (cores_hex.get("destaque") or cores_hex.get("accent")).lstrip("#")
+            destaque = tuple(int(hex_str[i : i + 2], 16) for i in (0, 2, 4))  # type: ignore
+    return primaria, secundaria, destaque
 
 
 def _fonte(tamanho: int) -> ImageFont.ImageFont:
@@ -63,7 +70,7 @@ def simulate_bannerbear(
     )
 
     origem = Path(image_path)
-    cor_primaria, cor_secundaria = _cores(cores_hex)
+    cor_primaria, cor_secundaria, cor_destaque = _cores(cores_hex)
 
     with Image.open(origem) as base:
         base = base.convert("RGBA")
@@ -76,13 +83,13 @@ def simulate_bannerbear(
         draw = ImageDraw.Draw(banner)
 
         if linha_fina:
-            draw.line([(0, h), (w, h)], fill=cor_secundaria + (255,), width=3)
+            draw.line([(0, h), (w, h)], fill=cor_destaque + (255,), width=3)
 
         if bloco_destaque:
             bloco_largura = int(w * 0.22)
             draw.rectangle(
                 [(w - bloco_largura, h), (w, h + barra_altura)],
-                fill=tuple(min(255, c + 25) for c in cor_primaria) + (255,),
+                fill=cor_destaque + (255,),
             )
 
         padding = int(barra_altura * (0.35 if cfg.valor == "saude" else 0.15))

@@ -1,4 +1,4 @@
--- Interali AI - Plataforma Multi-Nicho (Saude, Beleza, Marketing, Gastronomia)
+-- Interali AI - Plataforma SaaS Multi-Nicho (nicho em texto livre)
 -- Schema do banco de dados. Compativel com PostgreSQL. Para SQLite (usado por
 -- padrao no MVP), o SQLAlchemy (models.py) cria a tabela equivalente
 -- automaticamente.
@@ -6,16 +6,21 @@
 CREATE TABLE IF NOT EXISTS empresas (
     id VARCHAR(255) PRIMARY KEY,
     nome_comercial VARCHAR(255),
-    setor_macro VARCHAR(50),   -- 'saude', 'beleza', 'marketing', 'gastronomia'
-    sub_nicho VARCHAR(100),    -- Ex: 'Psicologia Infantil', 'Harmonizacao Facial', 'Consultor B2B'
-    logo_url VARCHAR(255),
-    cores_hex JSON,            -- Armazena a paleta do cliente
+    cnpj_cpf VARCHAR(20),
 
-    -- Onboarding Automatizado pela IA (Agente 0)
+    -- Classificacao interna, auto-detectada a partir do nicho em texto livre
+    -- (nunca escolhida pelo cliente): 'saude', 'beleza', 'marketing',
+    -- 'gastronomia' ou 'generico'.
+    setor_macro VARCHAR(50),
+    sub_nicho VARCHAR(150),    -- Nicho em texto livre digitado pelo cliente (ex: 'Doceria Gourmet')
+    logo_url VARCHAR(255),
+    cores_hex JSON,            -- {"primaria", "secundaria", "destaque"}
+
+    -- Perfil da Marca (editavel pelo cliente, com sugestao opcional por IA)
     persona_deduzida TEXT,
-    tom_de_voz_deduzido TEXT,
-    diretrizes_eticas_nicho TEXT, -- Regras especificas (ex: normas CFM/CFP para saude)
-    servicos_oferecidos TEXT,     -- Servicos/produtos que o cliente mais vende (preenchido 1x no onboarding)
+    -- Diretrizes eticas - SEMPRE auto-geradas a partir do nicho, nunca
+    -- editaveis pelo cliente (preserva a Trava de Etica).
+    diretrizes_eticas_nicho TEXT,
 
     -- Controle de Creditos Mensais (Plano: 30 artes / 8 videos)
     limite_artes_mensal INT DEFAULT 30,
@@ -23,4 +28,12 @@ CREATE TABLE IF NOT EXISTS empresas (
     limite_videos_mensal INT DEFAULT 8,
     videos_usados_no_mes INT DEFAULT 0,
     data_renovacao_creditos DATE
+);
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id VARCHAR(64) PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    senha_hash VARCHAR(255) NOT NULL,
+    empresa_id VARCHAR(255) UNIQUE REFERENCES empresas(id),
+    criado_em TIMESTAMP
 );

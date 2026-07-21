@@ -1,10 +1,8 @@
-"""CRUD basico da entidade Empresa (cliente White Label multi-nicho)."""
+"""CRUD basico da entidade Empresa (conta do cliente, isolada por usuario)."""
 from __future__ import annotations
 
 import datetime as dt
 from typing import Optional
-
-from sqlalchemy import select
 
 from interali_ai import config
 from interali_ai.database.db import get_session
@@ -19,27 +17,16 @@ def _proxima_renovacao(hoje: dt.date | None = None) -> dt.date:
     return dt.date(ano, mes + 1, 1)
 
 
-def criar_empresa(
-    empresa_id: str,
-    nome_comercial: str,
-    setor_macro: str = "",
-    sub_nicho: str = "",
-    logo_url: Optional[str] = None,
-    cores_hex: Optional[dict] = None,
-) -> Empresa:
-    """Cria (ou retorna, se ja existir) uma empresa com o plano padrao."""
+def criar_empresa(empresa_id: str, nome_comercial: str, cnpj_cpf: str = "") -> Empresa:
+    """Cria a conta/empresa do cliente com o plano padrao (chamado no cadastro,
+    via auth_service.criar_usuario). Setor/nicho/persona sao preenchidos
+    depois, no Perfil da Marca."""
     with get_session() as session:
-        existente = session.get(Empresa, empresa_id)
-        if existente:
-            return existente
-
         empresa = Empresa(
             id=empresa_id,
             nome_comercial=nome_comercial,
-            setor_macro=setor_macro,
-            sub_nicho=sub_nicho,
-            logo_url=logo_url,
-            cores_hex=cores_hex or {},
+            cnpj_cpf=cnpj_cpf or None,
+            cores_hex={},
             limite_artes_mensal=config.LIMITE_ARTES_MENSAL_PADRAO,
             artes_usadas_no_mes=0,
             limite_videos_mensal=config.LIMITE_VIDEOS_MENSAL_PADRAO,
@@ -61,37 +48,37 @@ def obter_empresa(empresa_id: str) -> Optional[Empresa]:
         return empresa
 
 
-def listar_empresas() -> list[Empresa]:
-    with get_session() as session:
-        empresas = list(session.scalars(select(Empresa)).all())
-        for e in empresas:
-            session.expunge(e)
-        return empresas
-
-
-def salvar_perfil_ia(
+def atualizar_perfil(
     empresa_id: str,
-    persona_deduzida: str,
-    tom_de_voz_deduzido: str,
-    diretrizes_eticas_nicho: str,
-    servicos_oferecidos: str = "",
+    sub_nicho: Optional[str] = None,
+    persona_deduzida: Optional[str] = None,
+    setor_macro: Optional[str] = None,
+    diretrizes_eticas_nicho: Optional[str] = None,
+    logo_url: Optional[str] = None,
+    cores_hex: Optional[dict] = None,
 ) -> Empresa:
-    """Grava o resultado do Agente 0 (Onboarding) diretamente na empresa.
-
-    `servicos_oferecidos` e preenchido uma unica vez (no momento da
-    assinatura/onboarding) e reaproveitado por todos os agentes de producao
-    em toda geracao futura de peca - nao e reperguntado a cada geracao.
-    """
+    """Grava o Perfil da Marca. So atualiza os campos explicitamente passados
+    (None = mantem o valor atual). `setor_macro`/`diretrizes_eticas_nicho` sao
+    sempre calculados pelo sistema (classificacao automatica do nicho em
+    onboarding_crew.py), nunca escolhidos diretamente pelo cliente."""
     with get_session() as session:
         empresa = session.get(Empresa, empresa_id)
         if empresa is None:
             raise ValueError(f"Empresa '{empresa_id}' nao encontrada.")
 
-        empresa.persona_deduzida = persona_deduzida
-        empresa.tom_de_voz_deduzido = tom_de_voz_deduzido
-        empresa.diretrizes_eticas_nicho = diretrizes_eticas_nicho
-        if servicos_oferecidos:
-            empresa.servicos_oferecidos = servicos_oferecidos
+        if sub_nicho is not None:
+            empresa.sub_nicho = sub_nicho
+        if persona_deduzida is not None:
+            empresa.persona_deduzida = persona_deduzida
+        if setor_macro is not None:
+            empresa.setor_macro = setor_macro
+        if diretrizes_eticas_nicho is not None:
+            empresa.diretrizes_eticas_nicho = diretrizes_eticas_nicho
+        if logo_url is not None:
+            empresa.logo_url = logo_url
+        if cores_hex is not None:
+            empresa.cores_hex = cores_hex
+
         session.flush()
         session.refresh(empresa)
         session.expunge(empresa)
