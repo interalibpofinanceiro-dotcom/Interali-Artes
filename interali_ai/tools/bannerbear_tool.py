@@ -54,6 +54,17 @@ _LAYOUT_POR_SETOR: dict[str, tuple[float, float, bool, bool]] = {
     "marketing": (0.20, 0.30, False, True),     # dinamico, com bloco de destaque
     "gastronomia": (0.20, 0.32, False, False),  # promocional vibrante, texto grande
 }
+_LAYOUT_PADRAO = (0.18, 0.28, False, False)
+
+
+def obter_layout_padrao(setor_macro: str = "") -> tuple[float, float]:
+    """(barra_fracao, fonte_fracao) padrao do perfil - usado para prefencher
+    o painel "Ajustar arte" ja sincronizado com o que foi gerado."""
+    cfg = obter_config_setor(setor_macro)
+    barra_fracao, fonte_fracao, _linha_fina, _bloco_destaque = _LAYOUT_POR_SETOR.get(
+        cfg.valor, _LAYOUT_PADRAO
+    )
+    return barra_fracao, fonte_fracao
 
 
 def simulate_bannerbear(
@@ -62,12 +73,22 @@ def simulate_bannerbear(
     logo_path: str | None = None,
     cores_hex: dict | None = None,
     setor_macro: str = "",
+    barra_fracao: float | None = None,
+    fonte_fracao: float | None = None,
+    alinhamento: str = "esquerda",
 ) -> str:
-    """Monta o banner final: imagem + barra de marca + logotipo + texto de impacto."""
+    """Monta o banner final: imagem + barra de marca + logotipo + texto de impacto.
+
+    `barra_fracao`/`fonte_fracao`/`alinhamento` ("esquerda"/"centro"/"direita")
+    sobrescrevem o padrao do perfil visual do nicho quando informados - usado
+    pelo painel "Ajustar arte" (Gerar Peca) para o cliente afinar cor/fonte/
+    posicao sem rodar os agentes de novo nem gastar credito."""
     cfg = obter_config_setor(setor_macro)
-    barra_fracao, fonte_fracao, linha_fina, bloco_destaque = _LAYOUT_POR_SETOR.get(
-        cfg.valor, (0.18, 0.28, False, False)
+    barra_fracao_padrao, fonte_fracao_padrao, linha_fina, bloco_destaque = _LAYOUT_POR_SETOR.get(
+        cfg.valor, _LAYOUT_PADRAO
     )
+    barra_fracao = barra_fracao_padrao if barra_fracao is None else barra_fracao
+    fonte_fracao = fonte_fracao_padrao if fonte_fracao is None else fonte_fracao
 
     origem = Path(image_path)
     cor_primaria, cor_secundaria, cor_destaque = _cores(cores_hex)
@@ -93,18 +114,29 @@ def simulate_bannerbear(
             )
 
         padding = int(barra_altura * (0.35 if cfg.valor == "saude" else 0.15))
-
-        if logo_path and Path(logo_path).exists():
-            with Image.open(logo_path) as logo:
-                logo = logo.convert("RGBA")
-                logo_tam = int(barra_altura * (0.55 if cfg.valor == "saude" else 0.7))
-                logo.thumbnail((logo_tam, logo_tam))
-                banner.alpha_composite(logo, dest=(padding, h + (barra_altura - logo.height) // 2))
-                texto_x = padding + logo_tam + padding
-        else:
-            texto_x = padding
-
         fonte = _fonte(max(int(barra_altura * fonte_fracao), 16))
+        texto_largura = draw.textlength(texto_banner, font=fonte)
+
+        logo_img = None
+        if logo_path and Path(logo_path).exists():
+            logo_img = Image.open(logo_path).convert("RGBA")
+            logo_tam = int(barra_altura * (0.55 if cfg.valor == "saude" else 0.7))
+            logo_img.thumbnail((logo_tam, logo_tam))
+
+        largura_conteudo = (logo_img.width + padding if logo_img else 0) + texto_largura
+        if alinhamento == "centro":
+            inicio_x = max(padding, int((w - largura_conteudo) / 2))
+        elif alinhamento == "direita":
+            inicio_x = max(padding, int(w - padding - largura_conteudo))
+        else:
+            inicio_x = padding
+
+        if logo_img:
+            banner.alpha_composite(logo_img, dest=(inicio_x, h + (barra_altura - logo_img.height) // 2))
+            texto_x = inicio_x + logo_img.width + padding
+        else:
+            texto_x = inicio_x
+
         texto_y = h + barra_altura // 2
         draw.text(
             (texto_x, texto_y),

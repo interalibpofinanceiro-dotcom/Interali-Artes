@@ -13,6 +13,7 @@ Rode com: streamlit run app.py
 """
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 import streamlit as st
@@ -27,6 +28,7 @@ from interali_ai.services.auth_service import (
     EmailInvalidoError,
     EmailJaCadastradoError,
 )
+from interali_ai.tools.bannerbear_tool import obter_layout_padrao, simulate_bannerbear
 from interali_ai.tools.stock_photo_tool import BuscaImagensError, baixar_imagem, buscar_imagens
 
 st.set_page_config(page_title="Interali AI", page_icon="✨", layout="wide")
@@ -383,51 +385,119 @@ with tela_gerar:
             )
 
         if resultado.get("bloqueado_etica"):
+            st.session_state["ultimo_resultado"] = None
             st.error(f"🚫 {resultado['erro']}")
             st.caption(
                 "A geracao foi cancelada automaticamente pela Trava de Etica "
                 "(Agente 5 - QA Specialist) antes de consumir credito."
             )
         elif not resultado["sucesso"]:
+            st.session_state["ultimo_resultado"] = None
             st.error(resultado["erro"])
         elif not resultado["aprovado"]:
+            st.session_state["ultimo_resultado"] = None
             st.error(f"Peca reprovada pelo QA: {resultado['motivo_qa']}")
         else:
-            st.success(f"Peca aprovada pelo QA: {resultado['motivo_qa']}")
-            if resultado.get("aviso_etico"):
-                st.warning(resultado["aviso_etico"])
+            st.session_state["ultimo_resultado"] = resultado
+            st.session_state["ultima_geracao_id"] = uuid.uuid4().hex
 
-            col_img, col_texto = st.columns([2, 1])
-            with col_img:
-                if resultado["banner_path"]:
-                    st.image(resultado["banner_path"], caption="Banner final", use_container_width=True)
-                if resultado["video_path"]:
-                    st.video(resultado["video_path"])
+    # ----------------------------------------------------------------- #
+    # Exibicao persistente do ultimo resultado (sobrevive aos reruns do
+    # painel de ajustes abaixo, que nao re-executa os agentes)
+    # ----------------------------------------------------------------- #
+    resultado = st.session_state.get("ultimo_resultado")
+    if resultado:
+        st.success(f"Peca aprovada pelo QA: {resultado['motivo_qa']}")
+        if resultado.get("aviso_etico"):
+            st.warning(resultado["aviso_etico"])
 
-            with col_texto:
-                st.subheader("Textos gerados (Agente 2)")
-                st.markdown(f"**Gancho:** {resultado['gancho']}")
-                st.markdown(f"**Desenvolvimento:** {resultado['desenvolvimento']}")
-                st.markdown(f"**CTA:** {resultado['cta']}")
-                st.markdown(f"**Texto do banner:** {resultado['texto_banner']}")
-                st.text_area("Legenda do Instagram", resultado["legenda_instagram"], height=200)
+        col_img, col_texto = st.columns([2, 1])
+        with col_img:
+            if resultado["banner_path"]:
+                st.image(resultado["banner_path"], caption="Banner final", use_container_width=True)
+            if resultado["video_path"]:
+                st.video(resultado["video_path"])
 
-                if resultado["banner_path"]:
-                    with open(resultado["banner_path"], "rb") as fh:
-                        st.download_button(
-                            "⬇️ Baixar banner (PNG)", fh, file_name=Path(resultado["banner_path"]).name
-                        )
-                if resultado["video_path"]:
-                    with open(resultado["video_path"], "rb") as fh:
-                        st.download_button(
-                            "⬇️ Baixar video (MP4)",
-                            fh,
-                            file_name=Path(resultado["video_path"]).name,
-                        )
+        with col_texto:
+            st.subheader("Textos gerados (Agente 2)")
+            st.markdown(f"**Gancho:** {resultado['gancho']}")
+            st.markdown(f"**Desenvolvimento:** {resultado['desenvolvimento']}")
+            st.markdown(f"**CTA:** {resultado['cta']}")
+            st.markdown(f"**Texto do banner:** {resultado['texto_banner']}")
+            st.text_area("Legenda do Instagram", resultado["legenda_instagram"], height=200)
 
-            if resultado["creditos_restantes"]:
-                st.caption(
-                    "Saldo apos esta geracao: "
-                    f"{resultado['creditos_restantes']['artes_restantes']} artes / "
-                    f"{resultado['creditos_restantes']['videos_restantes']} videos."
+            if resultado["banner_path"]:
+                with open(resultado["banner_path"], "rb") as fh:
+                    st.download_button(
+                        "⬇️ Baixar banner (PNG)", fh, file_name=Path(resultado["banner_path"]).name
+                    )
+            if resultado["video_path"]:
+                with open(resultado["video_path"], "rb") as fh:
+                    st.download_button(
+                        "⬇️ Baixar video (MP4)",
+                        fh,
+                        file_name=Path(resultado["video_path"]).name,
+                    )
+
+        if resultado["creditos_restantes"]:
+            st.caption(
+                "Saldo apos esta geracao: "
+                f"{resultado['creditos_restantes']['artes_restantes']} artes / "
+                f"{resultado['creditos_restantes']['videos_restantes']} videos."
+            )
+
+        # ------------------------------------------------------------- #
+        # Painel de ajustes - so para arte (banner). Remonta a peca com
+        # Pillow na hora (sem rodar os agentes de novo e sem gastar
+        # credito), a partir da foto ja tratada pelo Agente 1.
+        # ------------------------------------------------------------- #
+        if resultado.get("imagem_estilizada"):
+            geracao_id = st.session_state.get("ultima_geracao_id", "0")
+            cores_atuais = empresa.cores_hex or {}
+            barra_padrao, fonte_padrao = obter_layout_padrao(empresa.setor_macro)
+
+            with st.expander("🎛️ Ajustar arte (cor, fonte, posicao)", expanded=False):
+                texto_editado = st.text_input(
+                    "Texto do banner", value=resultado["texto_banner"], key=f"edit_texto_{geracao_id}"
                 )
+                col_ec1, col_ec2, col_ec3 = st.columns(3)
+                cor_primaria_edit = col_ec1.color_picker(
+                    "Cor primaria", cores_atuais.get("primaria", "#2d4d4c"), key=f"edit_cp_{geracao_id}"
+                )
+                cor_secundaria_edit = col_ec2.color_picker(
+                    "Cor secundaria", cores_atuais.get("secundaria", "#FFFFFF"), key=f"edit_cs_{geracao_id}"
+                )
+                cor_destaque_edit = col_ec3.color_picker(
+                    "Cor de destaque", cores_atuais.get("destaque", "#C9A227"), key=f"edit_cd_{geracao_id}"
+                )
+                tamanho_barra = st.slider(
+                    "Tamanho da barra de marca", 0.10, 0.35, barra_padrao, step=0.01, key=f"edit_barra_{geracao_id}"
+                )
+                tamanho_fonte = st.slider(
+                    "Tamanho da fonte", 0.15, 0.40, fonte_padrao, step=0.01, key=f"edit_fonte_{geracao_id}"
+                )
+                alinhamento_edit = st.radio(
+                    "Posicao do logo/texto",
+                    ["esquerda", "centro", "direita"],
+                    horizontal=True,
+                    key=f"edit_align_{geracao_id}",
+                )
+
+                if st.button("🔄 Atualizar arte", key=f"edit_atualizar_{geracao_id}"):
+                    novo_banner_path = simulate_bannerbear(
+                        resultado["imagem_estilizada"],
+                        texto_banner=texto_editado,
+                        logo_path=empresa.logo_url,
+                        cores_hex={
+                            "primaria": cor_primaria_edit,
+                            "secundaria": cor_secundaria_edit,
+                            "destaque": cor_destaque_edit,
+                        },
+                        setor_macro=empresa.setor_macro,
+                        barra_fracao=tamanho_barra,
+                        fonte_fracao=tamanho_fonte,
+                        alinhamento=alinhamento_edit,
+                    )
+                    st.session_state["ultimo_resultado"]["banner_path"] = novo_banner_path
+                    st.session_state["ultimo_resultado"]["texto_banner"] = texto_editado
+                    st.rerun()
