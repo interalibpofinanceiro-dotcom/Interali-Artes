@@ -1,14 +1,15 @@
-"""Simulacao da API BannerBear (usada pelo Agente 3 - Designer Grafico / Visual Composer).
+"""Simulacao da API BannerBear (Agente 3 - Designer Grafico / Visual Composer).
 
-Em producao seria uma chamada a API do BannerBear com um template. Aqui
-montamos o banner final com Pillow: aplica uma barra de marca com as
-`cores_hex` do cliente, o logotipo (se houver) e o texto gerado pelo
-Agente 2 (Copywriter), com o LAYOUT adaptado ao `setor_macro` do cliente
-(ver interali_ai/nichos.py):
- - Saude: clean/minimalista, muito espaco em branco, logo/texto discretos.
- - Beleza: sofisticado, com linha fina de destaque (accent line).
- - Marketing: dinamico, com bloco de destaque (estilo dado/metrica).
- - Gastronomia: promocional vibrante, barra grande e texto em destaque.
+Composicao de designer: o texto fica SOBREPOSTO na propria foto (nao numa
+barra separada abaixo dela), com um degrade de contraste na base para
+garantir legibilidade sobre qualquer imagem, tipografia em negrito com
+sombra, um "chip" de destaque na cor da marca e o logotipo como selo
+discreto no canto - layout pronto para Instagram/Reels, adaptado ao perfil
+do nicho (ver interali_ai/nichos.py):
+ - Saude: degrade suave e curto, tipografia menor, sem chip (clean).
+ - Beleza: degrade elegante, chip fino de destaque acima do texto.
+ - Marketing: area de texto maior, chip de destaque mais presente.
+ - Gastronomia: degrade generoso e vibrante, texto grande e impactante.
 """
 from __future__ import annotations
 
@@ -40,31 +41,73 @@ def _cores(
     return primaria, secundaria, destaque
 
 
-def _fonte(tamanho: int) -> ImageFont.ImageFont:
+def _fonte(tamanho: int, negrito: bool = False) -> ImageFont.ImageFont:
+    candidatos = ("arialbd.ttf", "Arial Bold.ttf") if negrito else ("arial.ttf",)
+    for nome in candidatos:
+        try:
+            return ImageFont.truetype(nome, tamanho)
+        except OSError:
+            continue
     try:
         return ImageFont.truetype("arial.ttf", tamanho)
     except OSError:
         return ImageFont.load_default()
 
 
-# Parametros de layout por setor: (fracao da barra, fracao da fonte, linha fina de destaque, bloco de destaque)
-_LAYOUT_POR_SETOR: dict[str, tuple[float, float, bool, bool]] = {
-    "saude": (0.14, 0.22, False, False),        # clean/minimalista, barra menor, fonte leve
-    "beleza": (0.16, 0.26, True, False),        # sofisticado, com linha fina de destaque
-    "marketing": (0.20, 0.30, False, True),     # dinamico, com bloco de destaque
-    "gastronomia": (0.20, 0.32, False, False),  # promocional vibrante, texto grande
+# Parametros de layout por setor: (fracao da area de texto/degrade sobre a
+# imagem, fracao da fonte do headline em relacao a largura, mostra chip de
+# destaque acima do texto)
+_LAYOUT_POR_SETOR: dict[str, tuple[float, float, bool]] = {
+    "saude": (0.38, 0.065, False),        # clean/minimalista, degrade curto, sem chip
+    "beleza": (0.42, 0.075, True),        # elegante, com chip fino de destaque
+    "marketing": (0.46, 0.080, True),     # area maior, chip mais presente
+    "gastronomia": (0.52, 0.090, True),   # vibrante, texto grande
 }
-_LAYOUT_PADRAO = (0.18, 0.28, False, False)
+_LAYOUT_PADRAO = (0.42, 0.072, False)
 
 
 def obter_layout_padrao(setor_macro: str = "") -> tuple[float, float]:
-    """(barra_fracao, fonte_fracao) padrao do perfil - usado para prefencher
-    o painel "Ajustar arte" ja sincronizado com o que foi gerado."""
+    """(area_texto_fracao, fonte_fracao) padrao do perfil - usado para
+    prefencher o painel "Ajustar arte" ja sincronizado com o que foi gerado."""
     cfg = obter_config_setor(setor_macro)
-    barra_fracao, fonte_fracao, _linha_fina, _bloco_destaque = _LAYOUT_POR_SETOR.get(
-        cfg.valor, _LAYOUT_PADRAO
-    )
-    return barra_fracao, fonte_fracao
+    area_fracao, fonte_fracao, _chip = _LAYOUT_POR_SETOR.get(cfg.valor, _LAYOUT_PADRAO)
+    return area_fracao, fonte_fracao
+
+
+def _degrade_vertical(
+    tamanho: tuple[int, int], altura_fracao: float, cor_base: tuple[int, int, int], alpha_maximo: int = 225
+) -> Image.Image:
+    """Degrade transparente->escuro na base da imagem, para o texto ficar
+    legivel por cima de qualquer foto."""
+    w, h = tamanho
+    overlay = Image.new("RGBA", tamanho, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    altura_degrade = max(int(h * altura_fracao), 1)
+    topo = h - altura_degrade
+    for y in range(topo, h):
+        t = (y - topo) / max(altura_degrade - 1, 1)
+        alpha = int(alpha_maximo * (t ** 1.3))
+        draw.line([(0, y), (w, y)], fill=cor_base + (alpha,))
+    return overlay
+
+
+def _quebrar_texto(draw: ImageDraw.ImageDraw, texto: str, fonte: ImageFont.ImageFont, largura_maxima: float) -> list[str]:
+    palavras = texto.split()
+    linhas: list[str] = []
+    linha_atual = ""
+    for palavra in palavras:
+        tentativa = f"{linha_atual} {palavra}".strip()
+        if draw.textlength(tentativa, font=fonte) <= largura_maxima or not linha_atual:
+            linha_atual = tentativa
+        else:
+            linhas.append(linha_atual)
+            linha_atual = palavra
+    if linha_atual:
+        linhas.append(linha_atual)
+    if len(linhas) > 3:
+        linhas = linhas[:3]
+        linhas[-1] = linhas[-1].rstrip(".") + "…"
+    return linhas
 
 
 def simulate_bannerbear(
@@ -73,78 +116,88 @@ def simulate_bannerbear(
     logo_path: str | None = None,
     cores_hex: dict | None = None,
     setor_macro: str = "",
-    barra_fracao: float | None = None,
+    area_texto_fracao: float | None = None,
     fonte_fracao: float | None = None,
     alinhamento: str = "esquerda",
 ) -> str:
-    """Monta o banner final: imagem + barra de marca + logotipo + texto de impacto.
+    """Monta o banner final: texto sobreposto na foto (com degrade de
+    contraste), chip de destaque e logo como selo no canto.
 
-    `barra_fracao`/`fonte_fracao`/`alinhamento` ("esquerda"/"centro"/"direita")
-    sobrescrevem o padrao do perfil visual do nicho quando informados - usado
-    pelo painel "Ajustar arte" (Gerar Peca) para o cliente afinar cor/fonte/
-    posicao sem rodar os agentes de novo nem gastar credito."""
+    `area_texto_fracao`/`fonte_fracao`/`alinhamento` ("esquerda"/"centro"/
+    "direita") sobrescrevem o padrao do perfil visual do nicho quando
+    informados - usado pelo painel "Ajustar arte" (Gerar Peca) para o
+    cliente afinar cor/fonte/posicao sem rodar os agentes de novo nem gastar
+    credito."""
     cfg = obter_config_setor(setor_macro)
-    barra_fracao_padrao, fonte_fracao_padrao, linha_fina, bloco_destaque = _LAYOUT_POR_SETOR.get(
-        cfg.valor, _LAYOUT_PADRAO
-    )
-    barra_fracao = barra_fracao_padrao if barra_fracao is None else barra_fracao
-    fonte_fracao = fonte_fracao_padrao if fonte_fracao is None else fonte_fracao
+    area_padrao, fonte_padrao, mostrar_chip = _LAYOUT_POR_SETOR.get(cfg.valor, _LAYOUT_PADRAO)
+    area_texto_fracao = area_padrao if area_texto_fracao is None else area_texto_fracao
+    fonte_fracao = fonte_padrao if fonte_fracao is None else fonte_fracao
 
     origem = Path(image_path)
     cor_primaria, cor_secundaria, cor_destaque = _cores(cores_hex)
+    # Degrade sempre escuro (tingido pela cor primaria da marca) para garantir
+    # contraste com o texto claro, independente da cor escolhida pelo cliente.
+    cor_degrade = tuple(int(c * 0.28) for c in cor_primaria)
 
     with Image.open(origem) as base:
-        base = base.convert("RGBA")
-        w, h = base.size
+        banner = base.convert("RGBA")
+        w, h = banner.size
 
-        barra_altura = max(int(h * barra_fracao), 100)
-        banner = Image.new("RGBA", (w, h + barra_altura), cor_primaria + (255,))
-        banner.paste(base, (0, 0))
+        overlay = _degrade_vertical((w, h), area_texto_fracao, cor_degrade)
+        banner.alpha_composite(overlay)
 
         draw = ImageDraw.Draw(banner)
+        margem = max(int(w * 0.06), 24)
 
-        if linha_fina:
-            draw.line([(0, h), (w, h)], fill=cor_destaque + (255,), width=3)
+        fonte_headline = _fonte(max(int(w * fonte_fracao), 22), negrito=True)
+        largura_maxima = w - 2 * margem
+        linhas = _quebrar_texto(draw, texto_banner, fonte_headline, largura_maxima)
 
-        if bloco_destaque:
-            bloco_largura = int(w * 0.22)
-            draw.rectangle(
-                [(w - bloco_largura, h), (w, h + barra_altura)],
+        bbox_linha = draw.textbbox((0, 0), "Ag", font=fonte_headline)
+        altura_linha = (bbox_linha[3] - bbox_linha[1]) * 1.25
+        altura_bloco = altura_linha * len(linhas)
+
+        y_topo_bloco = h - margem - altura_bloco
+
+        if mostrar_chip:
+            chip_largura = max(int(w * 0.12), 40)
+            chip_altura = max(int(altura_linha * 0.12), 5)
+            chip_y = y_topo_bloco - chip_altura - int(altura_linha * 0.35)
+            chip_x = margem if alinhamento != "direita" else w - margem - chip_largura
+            if alinhamento == "centro":
+                chip_x = (w - chip_largura) // 2
+            draw.rounded_rectangle(
+                [(chip_x, chip_y), (chip_x + chip_largura, chip_y + chip_altura)],
+                radius=chip_altura // 2,
                 fill=cor_destaque + (255,),
             )
 
-        padding = int(barra_altura * (0.35 if cfg.valor == "saude" else 0.15))
-        fonte = _fonte(max(int(barra_altura * fonte_fracao), 16))
-        texto_largura = draw.textlength(texto_banner, font=fonte)
+        y_cursor = y_topo_bloco
+        for linha in linhas:
+            texto_largura = draw.textlength(linha, font=fonte_headline)
+            if alinhamento == "centro":
+                x = (w - texto_largura) / 2
+            elif alinhamento == "direita":
+                x = w - margem - texto_largura
+            else:
+                x = margem
+            sombra_offset = max(int(getattr(fonte_headline, "size", 16) * 0.04), 2)
+            draw.text((x + sombra_offset, y_cursor + sombra_offset), linha, font=fonte_headline, fill=(0, 0, 0, 160))
+            draw.text((x, y_cursor), linha, font=fonte_headline, fill=cor_secundaria + (255,))
+            y_cursor += altura_linha
 
-        logo_img = None
         if logo_path and Path(logo_path).exists():
             logo_img = Image.open(logo_path).convert("RGBA")
-            logo_tam = int(barra_altura * (0.55 if cfg.valor == "saude" else 0.7))
+            logo_tam = max(int(min(w, h) * 0.11), 48)
             logo_img.thumbnail((logo_tam, logo_tam))
-
-        largura_conteudo = (logo_img.width + padding if logo_img else 0) + texto_largura
-        if alinhamento == "centro":
-            inicio_x = max(padding, int((w - largura_conteudo) / 2))
-        elif alinhamento == "direita":
-            inicio_x = max(padding, int(w - padding - largura_conteudo))
-        else:
-            inicio_x = padding
-
-        if logo_img:
-            banner.alpha_composite(logo_img, dest=(inicio_x, h + (barra_altura - logo_img.height) // 2))
-            texto_x = inicio_x + logo_img.width + padding
-        else:
-            texto_x = inicio_x
-
-        texto_y = h + barra_altura // 2
-        draw.text(
-            (texto_x, texto_y),
-            texto_banner,
-            fill=cor_secundaria,
-            font=fonte,
-            anchor="lm",
-        )
+            pad = max(int(logo_img.width * 0.22), 8)
+            selo_w, selo_h = logo_img.width + pad * 2, logo_img.height + pad * 2
+            draw.rounded_rectangle(
+                [(margem, margem), (margem + selo_w, margem + selo_h)],
+                radius=int(selo_h * 0.22),
+                fill=(255, 255, 255, 235),
+            )
+            banner.alpha_composite(logo_img, dest=(margem + pad, margem + pad))
 
     destino = config.OUTPUT_DIR / f"{origem.stem}_banner.png"
     banner.convert("RGB").save(destino, format="PNG")

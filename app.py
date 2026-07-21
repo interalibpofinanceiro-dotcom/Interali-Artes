@@ -454,7 +454,7 @@ with tela_gerar:
         if resultado.get("imagem_estilizada"):
             geracao_id = st.session_state.get("ultima_geracao_id", "0")
             cores_atuais = empresa.cores_hex or {}
-            barra_padrao, fonte_padrao = obter_layout_padrao(empresa.setor_macro)
+            area_padrao, fonte_padrao = obter_layout_padrao(empresa.setor_macro)
 
             with st.expander("🎛️ Ajustar arte (cor, fonte, posicao)", expanded=False):
                 texto_editado = st.text_input(
@@ -470,14 +470,15 @@ with tela_gerar:
                 cor_destaque_edit = col_ec3.color_picker(
                     "Cor de destaque", cores_atuais.get("destaque", "#C9A227"), key=f"edit_cd_{geracao_id}"
                 )
-                tamanho_barra = st.slider(
-                    "Tamanho da barra de marca", 0.10, 0.35, barra_padrao, step=0.01, key=f"edit_barra_{geracao_id}"
+                area_texto = st.slider(
+                    "Area do degrade/texto sobre a foto",
+                    0.25, 0.65, area_padrao, step=0.01, key=f"edit_area_{geracao_id}",
                 )
                 tamanho_fonte = st.slider(
-                    "Tamanho da fonte", 0.15, 0.40, fonte_padrao, step=0.01, key=f"edit_fonte_{geracao_id}"
+                    "Tamanho da fonte", 0.04, 0.12, fonte_padrao, step=0.005, key=f"edit_fonte_{geracao_id}"
                 )
                 alinhamento_edit = st.radio(
-                    "Posicao do logo/texto",
+                    "Posicao do texto",
                     ["esquerda", "centro", "direita"],
                     horizontal=True,
                     key=f"edit_align_{geracao_id}",
@@ -494,7 +495,7 @@ with tela_gerar:
                             "destaque": cor_destaque_edit,
                         },
                         setor_macro=empresa.setor_macro,
-                        barra_fracao=tamanho_barra,
+                        area_texto_fracao=area_texto,
                         fonte_fracao=tamanho_fonte,
                         alinhamento=alinhamento_edit,
                     )
