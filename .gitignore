@@ -1,0 +1,13 @@
+.env
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+assets/uploads/*
+assets/processed/*
+assets/output/*
+!assets/uploads/.gitkeep
+!assets/processed/.gitkeep
+!assets/output/.gitkeep
+.streamlit/secrets.toml

@@ -1,0 +1,62 @@
+Contexto do Projeto:
+Atue como Engenheiro de Software Sênior e Arquiteto de Soluções de IA. Preciso construir o backend e a lógica de agentes para uma plataforma SaaS White Label de Gastronomia chamada Interali AI Gastronomia.
+
+Diferente do escopo anterior, agora queremos Automação Total no Onboarding (Fase 2). O cliente não precisará de consultoria humana: a própria IA deve fazer perguntas simples em um chat de boas-vindas, deduzir a Persona, o Tom de Voz e salvar no banco de dados. Além disso, o sistema deve controlar um limite de consumo mensal por empresa (30 artes e 8 vídeos).
+
+Desenvolva o projeto em Python utilizando CrewAI ou LangGraph.
+
+1. BANCO DE DADOS ATUALIZADO (Com Controle de Créditos)
+Gere a modelagem do banco de dados contendo o controle de consumo e o perfil que a IA vai preencher de forma autônoma:
+
+SQL
+
+
+CREATE TABLE empresas (
+    id VARCHAR(255) PRIMARY KEY,
+    nome_comercial VARCHAR(255),
+    nicho_especifico VARCHAR(100), -- Ex: Hamburgueria, Confeitaria
+    logo_url VARCHAR(255),
+    cores_hex JSON, -- Armazena a paleta do cliente
+    
+    -- Dados que a IA vai gerar sozinha no Onboarding Inteligente:
+    persona_deduzida TEXT,
+    tom_de_voz_deduzido TEXT,
+    regras_de_comunicacao TEXT,
+    
+    -- Controle de Créditos Mensais (Plano: 30 artes / 8 vídeos)
+    limite_artes_mensal INT DEFAULT 30,
+    artes_usadas_no_mes INT DEFAULT 0,
+    limite_videos_mensal INT DEFAULT 8,
+    videos_usados_no_mes INT DEFAULT 0,
+    data_renovacao_creditos DATE
+);
+2. SCRIPT DE ONBOARDING AUTOMATIZADO (Agente de Briefing)
+Crie um agente inicial focado em entrevistar o usuário no primeiro acesso:
+
+Agente 0: O Estrategista de Onboarding (Branding Profiler)
+
+Função: Receber respostas brutas do cliente (Ex: "Sou o Zé, vendo pizza barata para estudantes à noite") e estruturar o manual de marca científico.
+
+Prompt de Output: "Com base nas respostas do usuário, gere um perfil estruturado contendo: 1. Perfil Demográfico e Psicográfico da Persona, 2. Três pilares do Tom de Voz, 3. Lista de palavras proibidas e permitidas para o nicho gastronômico dele. Salve isso diretamente nos campos persona_deduzida e tom_de_voz_deduzido."
+
+3. ORQUESTRAÇÃO DOS AGENTES DE PRODUÇÃO (Com Verificação de Limites)
+Escreva a lógica em Python que, antes de acionar os agentes de criação, verifica se o cliente ainda possui créditos disponíveis no mês (artes_usadas_no_mes < limite_artes_mensal). Se tiver créditos, execute a equipe:
+
+Agente 1: Curador Visual (Food Stylist AI): Faz o recorte da foto brute de comida usando API (Simular Photoroom), reconstrói a iluminação e gera um cenário realista de alta qualidade contextualizado ao prato.
+
+Agente 2: Redator de Gastronomia (Copywriter AI): Cria um Gancho (Hook) para os primeiros 3 segundos, uma frase de impacto para o banner e a legenda do Instagram utilizando a persona_deduzida armazenada.
+
+Agente 3: Designer de Peças (Visual Composer): Monta o banner aplicando o logotipo, o texto do Agente 2 e as cores em cores_hex via API (Simular BannerBear).
+
+Agente 4: Editor de Vídeo (Motion Producer AI): Caso o objetivo seja vídeo, transforma a imagem em um take com movimento dinâmico (Cinemagraph/Parallax de 4s) ou edita um vídeo bruto aplicando filtros de apetite e legendas magnéticas.
+
+Agente 5: Inspetor de Qualidade (QA): Garante que a imagem final está perfeitamente legível, harmoniosa e desconta 1 crédito do saldo do cliente caso aprovada.
+
+4. WORKFLOW E INTERFACE WEB (Streamlit)
+Gere um arquivo app.py utilizando a biblioteca Streamlit para que eu possa rodar e testar imediatamente a interface desse MVP. A interface deve ter:
+
+Tela 1: Chat de Onboarding Automatizado (Treinamento da IA).
+
+Tela 2: Dashboard mostrando o saldo de créditos restantes (Ex: "Você ainda tem 28 artes e 8 vídeos este mês").
+
+Tela 3: Área de Upload da foto do prato e seleção do objetivo do post, exibindo o resultado final na tela (Banner + Legenda) pronto para download.
