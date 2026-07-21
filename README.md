@@ -1,66 +1,72 @@
-# Interali AI - Plataforma Multi-Nicho
+# Interali AI - Plataforma SaaS Multi-Nicho
 
-MVP do backend/agentes para a plataforma SaaS White Label **Interali AI**,
-atendendo 4 setores: **Saude & Bem-Estar**, **Beleza & Estetica**,
-**Marketing & Social Media** e **Gastronomia**.
+Plataforma SaaS **multi-tenant** (cada cliente loga e só enxerga a própria
+conta) para gerar artes e vídeos com IA, adaptados ao nicho **em texto
+livre** de cada negócio (ex: "Doceria Gourmet", "Psicologia Infantil",
+"Consultoria de Marketing B2B" - sem lista fixa de setores).
 
-Multi-tenant, com **Onboarding 100% automatizado** (a IA entrevista o
-cliente e deduz persona/tom de voz/diretrizes eticas do nicho, sem
-consultoria humana) e **controle de creditos mensais** (30 artes / 8 videos
-por empresa).
+**Perfil da Marca** (nicho, identidade visual, persona) preenchido uma única
+vez pelo cliente, com sugestão opcional por IA, e **controle de créditos
+mensais** (30 artes / 8 vídeos por empresa).
 
-Construido em Python com **CrewAI** (agentes + orquestracao), **SQLAlchemy**
-(banco SQL) e **Streamlit** (interface do MVP).
+Construído em Python com **CrewAI** (agentes + orquestração), **SQLAlchemy**
+(banco SQL) e **Streamlit** (interface).
 
-## Setores e skills adaptativas
+## Classificação automática do nicho
 
-Cada agente adapta goal/prompt/tratamento de acordo com o `setor_macro` da
-empresa (registry central em `interali_ai/nichos.py`):
+O cliente nunca escolhe um "setor" numa lista - ele digita o próprio nicho
+(`interali_ai/nichos.py::classificar_nicho`). Nos bastidores, esse texto é
+classificado por palavra-chave (ou via LLM, quando configurada) em 1 de 5
+perfis visuais/éticos internos, que adaptam goal/prompt de cada agente:
 
-| Setor | Imagem (Agente 1) | Copy (Agente 2) | Layout (Agente 3) | Video (Agente 4) |
+| Perfil interno | Imagem (Agente 1) | Copy (Agente 2) | Layout (Agente 3) | Vídeo (Agente 4) |
 |---|---|---|---|---|
-| Saude | Cenario limpo, luz soft, acolhedor | Empatico/educativo, **sem promessas de cura** | Clean, minimalista, muito espaco em branco | Transicoes suaves, legendas acessiveis |
-| Beleza | Brilho/tom de pele, editorial | Inspirador, autoestima, chamada p/ agendamento | Sofisticado, linha fina de destaque | Ritmo dinamico (antes/depois) |
-| Marketing | Visual tech, grid corporativo | B2B, autoridade, ROI, dor do cliente | Dinamico, bloco de dado/metrica em destaque | Cortes rapidos, elementos caindo na tela |
-| Gastronomia | Suculencia/textura, cenario rustico | Fome visual, escassez, urgencia | Promocional vibrante, prato em destaque | Zoom in + "fumaca" animada |
+| Saude | Cenario limpo, luz soft, acolhedor | Empatico/educativo, **sem promessas de cura** | Clean, minimalista, muito espaco em branco | Barra de marca discreta |
+| Beleza | Brilho/tom de pele, editorial | Inspirador, autoestima, chamada p/ agendamento | Sofisticado, linha fina de destaque | Barra de marca com acabamento fino |
+| Marketing | Visual tech, grid corporativo | B2B, autoridade, ROI, dor do cliente | Dinamico, bloco de dado/metrica em destaque | Barra de marca robusta |
+| Gastronomia | Suculencia/textura, cenario rustico | Fome visual, escassez, urgencia | Promocional vibrante, prato em destaque | Barra de marca vibrante |
+| Generico | Cenario neutro e profissional | Claro e persuasivo | Layout limpo e versatil | Barra de marca neutra |
 
-O **Agente 5 (QA Specialist)** roda a **Trava de Etica**: para setores com
-`bloqueio_etico=True` (hoje, apenas Saude), se o texto gerado contiver
-termos proibidos pelos conselhos de classe (ex: "garantia de cura", "o
-melhor medico da cidade", "desconto imperdivel em procedimento medico"), a
-geracao inteira e **cancelada antes de gastar credito**, e o usuario e
-avisado com o motivo.
+O **Agente 5 (QA Specialist)** roda a **Trava de Etica**: para o perfil
+Saude (`bloqueio_etico=True`), se o texto gerado contiver termos proibidos
+pelos conselhos de classe (ex: "garantia de cura", "desconto imperdivel em
+procedimento medico"), a geração inteira é **cancelada antes de gastar
+crédito**, e o usuário é avisado com o motivo. As diretrizes éticas
+específicas do nicho digitado são sempre geradas pelo sistema - **nunca
+editáveis pelo cliente**.
 
 ## Estrutura do projeto
 
 ```
 interali_ai/
-  config.py                   # variaveis de ambiente, LLM, diretorios de assets
-  nichos.py                   # registry central dos 4 setores (skills adaptativas)
+  config.py                   # variaveis de ambiente, LLM (Groq/OpenAI), diretorios de assets
+  nichos.py                   # perfis visuais/eticos + classificar_nicho() (nicho livre)
   database/
     schema.sql                # DDL de referencia (Postgres)
-    models.py                 # modelo ORM `Empresa` (SQLAlchemy)
-    db.py                     # engine/session/init_db
+    models.py                 # modelos ORM `Usuario` e `Empresa` (SQLAlchemy)
+    db.py                     # engine/session/init_db (+ migracoes leves)
   services/
-    company_service.py        # CRUD de empresas
+    auth_service.py           # login/cadastro, isolamento multi-tenant (bcrypt)
+    company_service.py        # CRUD de empresas / perfil da marca
     credit_manager.py         # verificacao/consumo/renovacao de creditos
-    ethics_guard.py            # trava de etica (Agente 5 / setor Saude)
+    ethics_guard.py            # trava de etica (Agente 5 / perfil Saude)
   agents/
-    onboarding_agent.py        # Agente 0 - Branding Profiler
+    onboarding_agent.py        # Agente 0 - Estrategista de Marca (sugestao + classificacao)
     visual_curator_agent.py     # Agente 1 - Diretor de Imagem & Estetica (+ tool Photoroom)
     copywriter_agent.py         # Agente 2 - Niche Copywriter
     designer_agent.py           # Agente 3 - Visual Composer (+ tool BannerBear)
     video_agent.py               # Agente 4 - Motion Producer AI (+ tool de edicao real via ffmpeg)
     qa_agent.py                  # Agente 5 - QA Specialist
   tools/
-    photoroom_tool.py          # simulacao da API Photoroom (Pillow), adaptada por setor
-    bannerbear_tool.py         # simulacao da API BannerBear (Pillow), layout por setor
+    photoroom_tool.py          # simulacao da API Photoroom (Pillow), adaptada por perfil
+    bannerbear_tool.py         # simulacao da API BannerBear (Pillow), layout por perfil
     video_editor_tool.py        # edicao REAL (ffmpeg) do video do cliente: corta, enquadra 9:16, aplica marca
+    stock_photo_tool.py         # banco de imagens gratuito (API Pexels)
   crews/
-    onboarding_crew.py         # roda o Agente 0 e salva o perfil no banco
+    onboarding_crew.py         # sugestao de persona + classificacao automatica do nicho
     production_crew.py         # verifica creditos + roda Agentes 1-5 + trava de etica
 
-app.py                         # interface Streamlit (Cadastro por setor + 3 telas do MVP)
+app.py                         # interface Streamlit (login/cadastro + Perfil da Marca + Dashboard + Gerar Peca)
 requirements.txt
 .env.example
 ```
@@ -80,20 +86,32 @@ requirements.txt
    pip install -r requirements.txt
    ```
 
-3. Copie `.env.example` para `.env` e configure sua chave da OpenAI:
+3. Copie `.env.example` para `.env`:
 
    ```
    copy .env.example .env
    ```
 
-   > **Sem chave configurada**, o sistema roda em **modo simulado**: os
-   > Agentes 0 (Onboarding), 2 (Copywriter) e 5 (QA) retornam respostas
-   > heuristicas em vez de chamar um LLM, para que voce possa testar o
-   > fluxo completo do MVP imediatamente, sem custo. Os Agentes 1, 3 e 4
-   > (tratamento de imagem, montagem do banner e edicao do video) sempre
-   > funcionam de verdade - imagem/banner via Pillow, video via ffmpeg (binario
-   > gratuito obtido automaticamente pelo pacote `imageio-ffmpeg`, sem
-   > instalacao manual nem custo) - ja adaptados ao setor escolhido.
+   > **Sem nenhuma chave de LLM configurada**, o sistema roda em **modo
+   > simulado**: os Agentes 0 (sugestao/classificacao), 2 (Copywriter) e 5
+   > (QA) retornam respostas heuristicas em vez de chamar um LLM, para que
+   > voce possa testar o fluxo completo imediatamente, sem custo. Os
+   > Agentes 1, 3 e 4 (tratamento de imagem, montagem do banner e edicao do
+   > video) sempre funcionam de verdade - imagem/banner via Pillow, video via
+   > ffmpeg (binario gratuito obtido automaticamente pelo pacote
+   > `imageio-ffmpeg`) - ja adaptados ao perfil do nicho.
+   >
+   > Para ativar a IA de verdade **gratuitamente**, gere uma chave em
+   > [console.groq.com/keys](https://console.groq.com/keys) (sem cartao de
+   > credito) e configure `GROQ_API_KEY` no `.env`. Para trocar para o plano
+   > pago da OpenAI depois, basta preencher `OPENAI_API_KEY` - ela tem
+   > prioridade automaticamente, sem mudar nenhum codigo.
+   >
+   > O banco de imagens gratuito (aba "Banco de Imagens" em Gerar Peca) usa a
+   > API do Pexels - gere uma chave em
+   > [pexels.com/api](https://www.pexels.com/api/) e configure
+   > `PEXELS_API_KEY`. Sem essa chave, a aba fica desabilitada e o cliente so
+   > pode enviar a propria foto/video.
 
 4. Rode a interface:
 
@@ -101,20 +119,28 @@ requirements.txt
    streamlit run app.py
    ```
 
-5. No app: cadastre uma empresa na barra lateral escolhendo o **Setor**
-   (Saude, Beleza, Marketing ou Gastronomia) e o sub-nicho, converse na aba
-   **Onboarding Automatizado** para a IA deduzir a persona/tom de voz/
-   diretrizes eticas, veja o saldo de creditos no **Dashboard** e faca
-   upload de uma foto na aba **Gerar Peca** para rodar a equipe completa de
-   agentes.
+5. No app: crie uma conta (Nome Comercial, CNPJ/CPF, E-mail, Senha) na tela
+   de Cadastro, preencha o **Perfil da Marca** (nicho em texto livre,
+   logo + cores, persona com sugestao opcional por IA), veja o saldo de
+   creditos no topo e gere uma peca (upload proprio ou banco de imagens) na
+   aba **Gerar Peca**.
+
+## Autenticacao e isolamento multi-tenant
+
+Cada `Usuario` (`interali_ai/database/models.py`) esta ligado a exatamente
+uma `Empresa` (1:1), com senha em hash bcrypt
+(`interali_ai/services/auth_service.py`). `empresa_id` deriva sempre do
+usuario logado (`st.session_state["usuario_id"]`) - nao existe seletor de
+empresa na UI, o que garante que um cliente jamais acesse dados de outro.
 
 ## Banco de dados
 
 Por padrao usa SQLite local (`interali.db`, criado automaticamente por
-`init_db()`). Para usar Postgres em producao, defina `DATABASE_URL` no `.env`
-(ex: `postgresql+psycopg2://usuario:senha@host:5432/interali`) — o schema em
-`interali_ai/database/schema.sql` documenta a tabela `empresas` em SQL puro,
-incluindo `setor_macro`, `sub_nicho` e `diretrizes_eticas_nicho`.
+`init_db()`, que tambem aplica migracoes leves para colunas novas). Para usar
+Postgres em producao, defina `DATABASE_URL` no `.env` (ex:
+`postgresql+psycopg2://usuario:senha@host:5432/interali`) — o schema em
+`interali_ai/database/schema.sql` documenta as tabelas `usuarios` e
+`empresas` em SQL puro.
 
 ## Regra de creditos
 
@@ -124,9 +150,11 @@ video). O credito so e efetivamente descontado apos o **Agente 5 (QA)**
 aprovar a peca final **e** a peca passar pela Trava de Etica. O ciclo mensal
 e renovado automaticamente com base em `data_renovacao_creditos`.
 
-## Adicionar um novo setor
+## Adicionar um novo perfil visual/etico
 
 Basta adicionar uma nova entrada em `SETORES` em `interali_ai/nichos.py`
 (label, foco de onboarding, estilo de imagem/copy/layout/video, termos
-proibidos e se tem bloqueio etico). Todos os agentes e tools ja consultam
-esse registry automaticamente - nenhum outro arquivo precisa mudar.
+proibidos e se tem bloqueio etico) e as palavras-chave correspondentes em
+`_PALAVRAS_CHAVE_POR_SETOR`, para que `classificar_nicho()` passe a
+reconhecer nichos desse tipo. Todos os agentes e tools ja consultam esse
+registry automaticamente - nenhum outro arquivo precisa mudar.

@@ -16,11 +16,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL_NAME = os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+
+# Groq (https://console.groq.com/keys) - API gratuita, sem cartao de credito,
+# usada como provedor padrao de IA real (upgrade sem custo em relacao ao modo
+# simulado). Se OPENAI_API_KEY tambem estiver configurada, ela tem prioridade
+# (permite trocar para o plano pago sem mudar nenhum outro codigo).
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
+GROQ_MODEL_NAME = os.getenv("GROQ_MODEL_NAME", "llama-3.3-70b-versatile")
+
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(BASE_DIR / 'interali.db').as_posix()}")
 
-# Modo simulado: ativado automaticamente quando nao ha chave de LLM configurada,
-# permitindo rodar e testar o MVP (Streamlit) sem depender de uma API externa.
-USE_LLM = bool(OPENAI_API_KEY)
+# Modo simulado: ativado automaticamente quando nenhuma chave de LLM esta
+# configurada, permitindo rodar e testar o MVP (Streamlit) sem depender de
+# nenhuma API externa.
+USE_LLM = bool(OPENAI_API_KEY or GROQ_API_KEY)
 
 # Banco de imagens gratuito (Pexels - https://www.pexels.com/api/). Sem chave
 # configurada, a aba "Banco de Imagens" fica desabilitada (so upload proprio).
@@ -47,12 +56,16 @@ DURACAO_MAXIMA_VIDEO_SEGUNDOS = 90
 def get_llm():
     """Retorna a instancia de LLM usada pelos agentes CrewAI.
 
-    So deve ser chamada quando USE_LLM for True (chave configurada).
+    So deve ser chamada quando USE_LLM for True (alguma chave configurada).
+    Prioriza OPENAI_API_KEY (plano pago) se estiver definida; senao usa
+    GROQ_API_KEY (gratuita) - assim, ativar o plano pago no futuro e so
+    preencher o .env, sem mudar nenhum outro codigo.
     """
-    from langchain_openai import ChatOpenAI
+    if OPENAI_API_KEY:
+        from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(
-        model=OPENAI_MODEL_NAME,
-        api_key=OPENAI_API_KEY,
-        temperature=0.4,
-    )
+        return ChatOpenAI(model=OPENAI_MODEL_NAME, api_key=OPENAI_API_KEY, temperature=0.4)
+
+    from langchain_groq import ChatGroq
+
+    return ChatGroq(model=GROQ_MODEL_NAME, api_key=GROQ_API_KEY, temperature=0.4)
