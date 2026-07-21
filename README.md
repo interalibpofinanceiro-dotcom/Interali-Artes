@@ -50,12 +50,12 @@ interali_ai/
     visual_curator_agent.py     # Agente 1 - Diretor de Imagem & Estetica (+ tool Photoroom)
     copywriter_agent.py         # Agente 2 - Niche Copywriter
     designer_agent.py           # Agente 3 - Visual Composer (+ tool BannerBear)
-    video_agent.py               # Agente 4 - Motion Producer AI (+ tool Motion)
+    video_agent.py               # Agente 4 - Motion Producer AI (+ tool de edicao real via ffmpeg)
     qa_agent.py                  # Agente 5 - QA Specialist
   tools/
     photoroom_tool.py          # simulacao da API Photoroom (Pillow), adaptada por setor
     bannerbear_tool.py         # simulacao da API BannerBear (Pillow), layout por setor
-    motion_tool.py              # simulacao de video (GIF), ritmo/efeitos por setor
+    video_editor_tool.py        # edicao REAL (ffmpeg) do video do cliente: corta, enquadra 9:16, aplica marca
   crews/
     onboarding_crew.py         # roda o Agente 0 e salva o perfil no banco
     production_crew.py         # verifica creditos + roda Agentes 1-5 + trava de etica
@@ -90,8 +90,10 @@ requirements.txt
    > Agentes 0 (Onboarding), 2 (Copywriter) e 5 (QA) retornam respostas
    > heuristicas em vez de chamar um LLM, para que voce possa testar o
    > fluxo completo do MVP imediatamente, sem custo. Os Agentes 1, 3 e 4
-   > (tratamento de imagem, montagem do banner e geracao do "video") sempre
-   > funcionam de verdade, via Pillow, ja adaptados ao setor escolhido.
+   > (tratamento de imagem, montagem do banner e edicao do video) sempre
+   > funcionam de verdade - imagem/banner via Pillow, video via ffmpeg (binario
+   > gratuito obtido automaticamente pelo pacote `imageio-ffmpeg`, sem
+   > instalacao manual nem custo) - ja adaptados ao setor escolhido.
 
 4. Rode a interface:
 

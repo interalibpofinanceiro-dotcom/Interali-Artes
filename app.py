@@ -214,8 +214,21 @@ with tela3:
             "obter textos alinhados a persona do cliente."
         )
 
-    foto = st.file_uploader("Foto/imagem bruta", type=["png", "jpg", "jpeg"])
     objetivo = st.radio("Objetivo do post", options=["arte", "video"], horizontal=True)
+
+    foto = None
+    video_bruto = None
+    if objetivo == "arte":
+        foto = st.file_uploader("Foto/imagem bruta", type=["png", "jpg", "jpeg"])
+    else:
+        video_bruto = st.file_uploader("Seu video (MP4, MOV ou WEBM)", type=["mp4", "mov", "webm"])
+        st.caption(
+            f"Envie um video de ate {config.DURACAO_MAXIMA_VIDEO_SEGUNDOS}s "
+            "(formato Reels/TikTok/Shorts). Se for mais longo, a IA corta "
+            "automaticamente nesse limite. A IA enquadra em 9:16 e aplica a "
+            "barra de marca (logo + cores + nome) na base do video."
+        )
+
     briefing_usuario = st.text_area(
         "Qual o tipo de banner voce deseja?",
         placeholder=(
@@ -228,17 +241,25 @@ with tela3:
         height=120,
     )
 
-    gerar = st.button("✨ Gerar peca com a IA", type="primary", disabled=foto is None)
+    arquivo_pronto = foto is not None if objetivo == "arte" else video_bruto is not None
+    gerar = st.button("✨ Gerar peca com a IA", type="primary", disabled=not arquivo_pronto)
 
-    if gerar and foto is not None:
-        caminho_upload = config.UPLOADS_DIR / foto.name
-        caminho_upload.write_bytes(foto.getbuffer())
+    if gerar and arquivo_pronto:
+        caminho_imagem = None
+        caminho_video = None
+        if objetivo == "arte":
+            caminho_imagem = config.UPLOADS_DIR / foto.name
+            caminho_imagem.write_bytes(foto.getbuffer())
+        else:
+            caminho_video = config.UPLOADS_DIR / video_bruto.name
+            caminho_video.write_bytes(video_bruto.getbuffer())
 
         with st.spinner("Equipe de agentes trabalhando na sua peca..."):
             resultado = run_production_pipeline(
                 empresa_id=empresa_id,
-                image_path=str(caminho_upload),
                 objetivo=objetivo,
+                image_path=str(caminho_imagem) if caminho_imagem else None,
+                video_path_bruto=str(caminho_video) if caminho_video else None,
                 briefing_usuario=briefing_usuario,
             )
 
@@ -259,9 +280,10 @@ with tela3:
 
             col_img, col_texto = st.columns([2, 1])
             with col_img:
-                st.image(resultado["banner_path"], caption="Banner final", use_container_width=True)
+                if resultado["banner_path"]:
+                    st.image(resultado["banner_path"], caption="Banner final", use_container_width=True)
                 if resultado["video_path"]:
-                    st.image(resultado["video_path"], caption="Video (GIF simulado)")
+                    st.video(resultado["video_path"])
 
             with col_texto:
                 st.subheader("Textos gerados (Agente 2)")
@@ -271,14 +293,15 @@ with tela3:
                 st.markdown(f"**Texto do banner:** {resultado['texto_banner']}")
                 st.text_area("Legenda do Instagram", resultado["legenda_instagram"], height=200)
 
-                with open(resultado["banner_path"], "rb") as fh:
-                    st.download_button(
-                        "⬇️ Baixar banner (PNG)", fh, file_name=Path(resultado["banner_path"]).name
-                    )
+                if resultado["banner_path"]:
+                    with open(resultado["banner_path"], "rb") as fh:
+                        st.download_button(
+                            "⬇️ Baixar banner (PNG)", fh, file_name=Path(resultado["banner_path"]).name
+                        )
                 if resultado["video_path"]:
                     with open(resultado["video_path"], "rb") as fh:
                         st.download_button(
-                            "⬇️ Baixar video (GIF)",
+                            "⬇️ Baixar video (MP4)",
                             fh,
                             file_name=Path(resultado["video_path"]).name,
                         )

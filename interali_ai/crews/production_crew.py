@@ -5,16 +5,22 @@ empresa ainda possui creditos disponiveis no mes
 (artes_usadas_no_mes < limite_artes_mensal, ou o equivalente para video).
 So entao a equipe e executada, na ordem:
 
-    Agente 1 (Diretor de Imagem)  -> trata a foto/video adaptado ao setor
-    Agente 2 (Copywriter)         -> gera hook, texto do banner e legenda
-    Trava de Etica (setor Saude)  -> cancela a geracao se houver termo proibido
-    Agente 3 (Visual Composer)    -> monta o banner com logo/cores/layout do setor
-    Agente 4 (Motion Producer)    -> (se objetivo == video) gera o take dinamico
-    Agente 5 (QA)                 -> aprova a peca e so entao desconta 1 credito
+    objetivo == "arte":
+        Agente 1 (Diretor de Imagem)  -> trata a foto enviada, adaptado ao setor
+        Agente 2 (Copywriter)         -> gera gancho, desenvolvimento, cta, texto do banner e legenda
+        Trava de Etica (setor Saude)  -> cancela a geracao se houver termo proibido
+        Agente 3 (Visual Composer)    -> monta o banner com logo/cores/layout do setor
 
-A trava de etica roda logo apos o Copywriter (Agente 2) e ANTES do Designer
-(Agente 3), para cancelar a geracao o mais cedo possivel quando o setor exige
-bloqueio (hoje: Saude) - sem gastar credito nem montar banner/video.
+    objetivo == "video":
+        Agente 2 (Copywriter)         -> gera gancho, desenvolvimento, cta, texto do banner e legenda
+        Trava de Etica (setor Saude)  -> cancela a geracao se houver termo proibido
+        Agente 4 (Motion Producer)    -> corta/enquadra o video enviado pelo cliente e aplica a marca
+
+    Agente 5 (QA)                     -> aprova a peca e so entao desconta 1 credito
+
+A trava de etica roda logo apos o Copywriter (Agente 2) e ANTES do Designer/
+Motion Producer, para cancelar a geracao o mais cedo possivel quando o setor
+exige bloqueio (hoje: Saude) - sem gastar credito nem montar banner/video.
 """
 from __future__ import annotations
 
@@ -27,8 +33,8 @@ from interali_ai.nichos import obter_config_setor
 from interali_ai.services import company_service, credit_manager, ethics_guard
 from interali_ai.services.credit_manager import SaldoInsuficienteError
 from interali_ai.tools.bannerbear_tool import simulate_bannerbear
-from interali_ai.tools.motion_tool import simulate_motion
 from interali_ai.tools.photoroom_tool import simulate_photoroom
+from interali_ai.tools.video_editor_tool import process_client_video
 
 Objetivo = Literal["arte", "video"]
 
@@ -213,16 +219,28 @@ def _qa_via_llm(empresa, texto_banner: str) -> VeredictoQA:
 
 def run_production_pipeline(
     empresa_id: str,
-    image_path: str,
     objetivo: Objetivo,
+    image_path: Optional[str] = None,
+    video_path_bruto: Optional[str] = None,
     logo_path: Optional[str] = None,
     briefing_usuario: str = "",
 ) -> dict:
     """Executa a equipe de producao completa, respeitando o limite de creditos
-    e a trava de etica do setor do cliente."""
+    e a trava de etica do setor do cliente.
+
+    Para objetivo="arte", `image_path` e obrigatorio (foto bruta do cliente).
+    Para objetivo="video", `video_path_bruto` e obrigatorio (video proprio do
+    cliente, ate config.DURACAO_MAXIMA_VIDEO_SEGUNDOS - o excedente e cortado
+    automaticamente pelo Agente 4).
+    """
     empresa = company_service.obter_empresa(empresa_id)
     if empresa is None:
         return {"sucesso": False, "erro": f"Empresa '{empresa_id}' nao encontrada."}
+
+    if objetivo == "video" and not video_path_bruto:
+        return {"sucesso": False, "erro": "Envie um video para gerar a peca em video."}
+    if objetivo == "arte" and not image_path:
+        return {"sucesso": False, "erro": "Envie uma foto para gerar a arte."}
 
     cfg = obter_config_setor(empresa.setor_macro)
     tipo_credito = "video" if objetivo == "video" else "arte"
@@ -242,8 +260,12 @@ def run_production_pipeline(
 
     cores_hex = empresa.cores_hex or {}
 
-    # Agente 1 - Diretor de Imagem & Estetica (Visual Specialist AI)
-    imagem_estilizada = simulate_photoroom(image_path, cores_hex=cores_hex, setor_macro=empresa.setor_macro)
+    # Agente 1 - Diretor de Imagem & Estetica (Visual Specialist AI), somente para arte
+    imagem_estilizada = None
+    if objetivo == "arte":
+        imagem_estilizada = simulate_photoroom(
+            image_path, cores_hex=cores_hex, setor_macro=empresa.setor_macro
+        )
 
     # Agente 2 - Estrategista de Copywriting (Niche Copywriter)
     copy = (
@@ -268,19 +290,29 @@ def run_production_pipeline(
             "termos_encontrados": resultado_etica.termos_encontrados,
         }
 
-    # Agente 3 - Designer Grafico (Visual Composer)
-    banner_path = simulate_bannerbear(
-        imagem_estilizada,
-        texto_banner=copy.texto_banner,
-        logo_path=logo_path or empresa.logo_url,
-        cores_hex=cores_hex,
-        setor_macro=empresa.setor_macro,
-    )
-
-    # Agente 4 - Editor de Video (Motion Producer AI), somente se objetivo == video
+    banner_path = None
     video_path = None
-    if objetivo == "video":
-        video_path = simulate_motion(banner_path, setor_macro=empresa.setor_macro)
+
+    if objetivo == "arte":
+        # Agente 3 - Designer Grafico (Visual Composer)
+        banner_path = simulate_bannerbear(
+            imagem_estilizada,
+            texto_banner=copy.texto_banner,
+            logo_path=logo_path or empresa.logo_url,
+            cores_hex=cores_hex,
+            setor_macro=empresa.setor_macro,
+        )
+    else:
+        # Agente 4 - Editor de Video (Motion Producer AI): edita o video real
+        # enviado pelo cliente (corta no limite do plano, enquadra em 9:16 e
+        # aplica a barra de marca).
+        video_path = process_client_video(
+            video_path_bruto,
+            logo_path=logo_path or empresa.logo_url,
+            cores_hex=cores_hex,
+            setor_macro=empresa.setor_macro,
+            nome_comercial=empresa.nome_comercial or "",
+        )
 
     # Agente 5 - Inspetor de Qualidade e Etica (QA Specialist)
     veredito = _qa_via_llm(empresa, copy.texto_banner) if config.USE_LLM else _qa_simulado(

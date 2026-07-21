@@ -34,6 +34,10 @@ for _dir in (UPLOADS_DIR, PROCESSED_DIR, OUTPUT_DIR):
 LIMITE_ARTES_MENSAL_PADRAO = 30
 LIMITE_VIDEOS_MENSAL_PADRAO = 8
 
+# Duracao maxima aceita para o video enviado pelo cliente (Agente 4 corta o
+# excedente automaticamente). 90s cobre o formato padrao de Reels/TikTok/Shorts.
+DURACAO_MAXIMA_VIDEO_SEGUNDOS = 90
+
 
 def get_llm():
     """Retorna a instancia de LLM usada pelos agentes CrewAI.
